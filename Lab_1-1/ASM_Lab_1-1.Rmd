@@ -1,0 +1,49 @@
+---
+title: "Linear Model for IDMB data"
+subtitle: "ASM Homework 1"
+author: "Ricard Monge Amalia Vradi Maria Gkotsopoulou"
+date: "3/10/2019"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Exploratory data analysis
+
+```{r data_load}
+data <- read.table(file="IMDB.csv", header = T, sep = ";")
+summary(data)
+```
+
+## Model selection
+
+### Complete model
+
+```{r complete_model}
+
+```
+
+### Optimal model
+
+```{r optimal_model}
+
+```
+### Multicollinearity
+
+```{r multicollinearity}
+
+```
+
+## Model validation
+
+```{r model_validation}
+
+```
+
+## Model interpretation
+
+```{r model_interpretation}
+
+```
