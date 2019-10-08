@@ -1,0 +1,324 @@
+---
+title: | 
+  | \LARGE ASM Homework 1
+subtitle: "Linear Model for IDMB data"
+author: "Maria Gkotsopoulou & Ricard Monge Calvo & Amalia Vradi"
+date: "13/10/2019"
+geometry: margin=1.5cm
+output: 
+  pdf_document: 
+    latex_engine: xelatex
+fontsize: 11pt
+spacing: single
+subparagraph: yes
+header-includes: |
+  \usepackage{titlesec}
+  \usepackage{subfig}
+  \titlespacing{\section}{0pt}{10pt plus 1pt minus 1pt}{0pt plus 1pt minus 1pt}
+  \titlespacing{\subsection}{0pt}{10pt plus 1pt minus 1pt}{0pt plus 1pt minus 1pt}
+  \titlespacing{\subsubsection}{0pt}{10pt plus 1pt minus 1pt}{0pt plus 1pt minus 1pt}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, echo = FALSE, message=FALSE, warning=FALSE,results="hide"}
+
+############################################################
+###############  libraries  & Functions      ############### 
+############################################################
+
+### load packages ###
+requireorinstall=function(package=""){
+  reqpac=parse(text=paste("require(",as.character(package),")"))
+  if(eval(reqpac)){
+    print(paste(as.character(package), "has been loaded correctly"))
+  } else {
+    print(paste("trying to install" ,as.character(package)))
+    eval(parse(text=paste("try(install.packages(",as.character(package),"))")))
+    if(eval(reqpac)){
+      print(paste(as.character(package) ,"has been installed and loaded correctly"))
+    } else {
+      warning(paste("could not install",as.character(package)))
+    }
+  }
+}
+
+
+requireorinstall(c("knitr","kableExtra","ggplot2","ggsci","dplyr","tidyr","lmtest",
+                   "tidyverse","broom","purrr","magrittr","grid","gridExtra","scales",
+                   "GGally","fBasics", "car", "effects", "emmeans"))
+
+## theme definition for ggplot 
+ggstyle = theme(panel.grid.major = element_blank(),
+                panel.grid.minor = element_blank(),
+                panel.background = element_blank(),
+                axis.line = element_blank(),
+                axis.title.x = element_text(size = 10,
+                                            vjust=0.1),
+                axis.title.y = element_text(size = 10,
+                                            vjust=1.5),
+                axis.text.y = element_text(size=9),
+                axis.text.x = element_text(size=9,
+                                           angle = 45,
+                                           vjust = 1,
+                                           hjust=1),
+                plot.title = element_text(size=11),
+                legend.text = element_text( size=8),
+                legend.title = element_text( size=9))
+
+ggstyleFonts = theme(axis.title.x = element_text(size = 10,
+                                                 vjust=0.1),
+                     axis.title.y = element_text(size = 10,
+                                                 vjust=1.5),
+                     axis.text.y = element_text(size=9),
+                     axis.text.x = element_text(size=9,
+                                                angle = 45,
+                                                vjust = 1,
+                                                hjust=1),
+                     plot.title = element_text(size=11),
+                     legend.text = element_text( size=8),
+                     legend.title = element_text( size=9))
+
+```
+
+
+```{r}
+############################################################
+###############       DATA LOAD             ############### 
+############################################################
+
+imdb <- read.csv("IMDB.csv", stringsAsFactors = F, sep=";")
+
+
+data.frame(variable = names(imdb),
+           class = sapply(imdb, class),
+           first_values = sapply(imdb, function(x) paste0(head(x),collapse = ", ")),
+           row.names = NULL)
+```
+
+We first check for any missing values and see that there are no NAs.
+```{r}
+summary(imdb)
+```
+
+Given the range of gross and budget we can switch to working in unit numbers by dividing by a million.
+```{r}
+imdb<- imdb%>% 
+        mutate(gross = gross/1000000,
+               budget = budget/1000000)
+```
+
+# Exploratory Data Analysis
+
+We are interested in predicting the gross of a movie basic on its characteristics.
+First let's analyze the target variable.
+
+```{r}
+basicStats(imdb%>%dplyr::select(gross))
+```
+
+Using the basicStats we obtain the excess kurtosis, $K(X)-3$ and we see that we have 
+a considerable positive one and that it has a right skewed distribution. So, it is not normal.
+We should consider that the skewness and kurtosis could be due to outliers.
+
+In the following graph we see the relation between $gross$ and all the numerical 
+variables.
+```{r}
+imdb %>% 
+  select(-c(movietitle,genre, titleyear)) %>%
+  gather(-gross, key = "some_var_name", value = "some_value_name") %>%
+  ggplot(aes(x = some_value_name, y = gross)) +
+  geom_point() +
+  facet_wrap(~ some_var_name, scales = "free")+
+  ggstyleFonts +
+  theme(panel.grid.major = element_blank(),
+        axis.title.x = element_blank())
+```
+
+We observe more of a linear relation between the pairs of gross and budget as well
+as with duration. We can't discern any pattern between the pairs of gross and the 
+Facebook variables: $directorfl,actor1fl,actor2fl,actor3fl,castfl$. 
+The $actor3fl,directorfl$ could be separated in 2 clusters at the cutoff point of 5000 likes
+and for the latter at the cutoff point of 10000 likes
+
+We create a categorial variable ($yearcat$) with 3 levels: 2000-2005, 2006-2010 and 2011-2016
+based on the $titleyear$ of the movie.
+
+```{r}
+imdb <- imdb%>%
+        mutate(yearcat = ifelse(titleyear< 2006, "2000-2005", 
+                          ifelse(titleyear< 2011, "2006-2010","2011-2016" ))) 
+ggplot(imdb%>%
+         group_by(titleyear,yearcat)%>% 
+         summarise(movies = n()) ,
+       aes(x=titleyear, y=movies, fill= yearcat))+
+  geom_bar(stat="identity") +
+  geom_text(aes(label= movies), 
+            position=position_stack(vjust=0.5), colour="white" ,size=3) +
+  scale_fill_d3(name="") +
+  labs(y = "# movies", x= "year" , title = "Cluster movies into 3 categories by year") +
+  ggstyle+
+  theme(legend.position="bottom")
+```
+
+
+```{r}
+imdb%>%
+  group_by(titleyear,yearcat)%>%
+  summarise(movies = n()) %>%
+  group_by(yearcat) %>%
+  mutate(avgMovies = mean(movies)) %>%
+  summarise(movies = sum(movies),
+            avgMovies = max(avgMovies)) %>%
+  mutate(pcn = movies/sum(movies))
+```
+
+The movies are roughly uniformly distributed between the three categories.
+However, on average more movies were released between the years 2006 and 2010. 
+In addition, based on the significant difference between 2016 and all the previous
+years it is highly probable that we don't have data for the whole year. 
+So, we have two categorical variables: the year category and the genre. 
+Let's see how the economical variables relates to $genre$. 
+
+```{r,message = FALSE}
+imdb %>% 
+  select(c(budget,duration,gross,genre)) %>% 
+  ggpairs(.,
+          title = "Imdb economical variables relation by Year genre", 
+          mapping = ggplot2::aes(colour=genre), 
+          lower = list(#continuous = wrap("smooth", alpha = 0.3, size=0.1),
+                      continuous = wrap("points", size=0.1),
+                      discrete = "blank", combo="blank"), 
+          diag = list(discrete="barDiag", 
+                      continuous = wrap("densityDiag", alpha=0.5 )), 
+          upper = list(combo = wrap("box_no_facet", alpha=0.5),
+                      continuous = wrap("cor", size=2, alignPercent=0.8))) +
+  ggstyle+
+  theme(panel.grid.major = element_blank())    
+```
+
+We observe two outliers in the Action genre based on their $gross$ value.
+```{r}
+imdb %>% dplyr::filter(gross> 600) %>% pull(movietitle)
+```
+
+The distribution of $gross$ for the Action genre is skewed to the right and has 
+a higher IQR than the rest of the genres. However, it is also the genre with 
+the smallest number of movies.
+Similarly, $budget$ has excess kurtosis with more heavier tails than $gross$
+especially for the action movies.
+In the linear relation that we observed before between $gross$ and $budget$ we 
+add now the genre which confirms this relation, particularly more for the Action movies.
+
+```{r,message = FALSE}
+imdb %>% 
+  select(c(budget,duration,gross,yearcat)) %>% 
+  ggpairs(.,
+          title = "Imdb economical variables relation by Year group", 
+          mapping = ggplot2::aes(colour=yearcat), 
+          lower = list(#continuous = wrap("smooth", alpha = 0.3, size=0.1),
+            continuous = wrap("points", size=0.1),
+            discrete = "blank", combo="blank"), 
+          diag = list(discrete="barDiag", 
+                      continuous = wrap("densityDiag", alpha=0.5 )), 
+          upper = list(combo = wrap("box_no_facet", alpha=0.5),
+                       continuous = wrap("cor", size=2, alignPercent=0.8))) +
+  ggstyle+
+  theme(panel.grid.major = element_blank())
+```
+
+On the other hand, we don't observe any differences between the different years.
+
+# Fit complete model
+
+We first fit the complete model including as predictors, all the numerical variables,
+the two categorical variables, the categorical-categorical interactions and the 
+interaction between numerical-categorical. 
+
+```{r}
+mc<-lm(gross~(.-genre-yearcat)*(genre+yearcat)+genre:yearcat,
+       imdb%>% dplyr::select(-c(movietitle,titleyear)))
+
+glance(mc)
+```
+
+Roughly 64% of the variance found in the response variable ($gross$) can be explained 
+by the predictor variables. The obtained p-value ($omnibus test$) indicates that 
+the overall model is significant. 
+
+```{r, warning=FALSE}
+op<-par(mfrow=c(2,2))
+plot(mc)
+par(op)
+```
+
+From the $Normal Q-Q$ plot we see that there is assymetry in the distribution and
+we can conclude that normality of the residuals is not met. From the $Residuals vs Fitted$ plot,
+we seek to validate the assumption of homoskedasticity. We observe, a non 
+random distribution of the points along the $y-axis$. All in all, we can't validate this model.
+
+We observed slight curvature in the plotted line in the $Residuals vs Fitted$ plot. 
+```{r}
+car::residualPlots(mc, terms= ~ 1)
+```
+
+However, based on $p-value$ we can't reject the $H_0$ hypothesis and hence $\beta_2 =0$ so,
+a model in which we only have a linear relationship is chosen. 
+
+# Select significant variables
+
+We use the stepwise procedure, by using the $BIC$ criterion, to select the significant variables.
+We start with the complete model and eliminate in $both$ directions.
+```{r}
+summary(m1<-step(mc,direction="both",k=log(nrow(imdb))))
+```
+
+
+When dealing with categorical variables we should use the $Anova$ method and obtain the
+variables kept using the stepwise procedure.
+The $p-value$ obtained will allow us to say if the interaction variables are significant. 
+
+```{r}
+car::Anova(m1)
+```
+
+We see that neither $actor3fl$ nor $directorfl$ are included in the model and hence, 
+we could consider categorizing these variables as it was mentioned in the exploratory 
+analysis and see whether we obtain a better model. 
+
+# Check for multicollinearity
+
+Strong associations between predictors will increase standard errors, and therefore 
+increase the probability of a type-II error. The diagnostic that we will use is 
+the variance-inflation factor. 
+```{r}
+car::vif(m1)
+```
+
+$castfl$ and $actor1fl, actor2fl$ which are included in the model are correlated, 
+as well as $actor1fl$ and $actor2fl$. Consequently the coefficients can't be directly interpreted. 
+```{r}
+corr_mat=cor(imdb %>% 
+              select_if(is.numeric) %>%
+               select(-c(gross,titleyear)),method="s")
+corrplot::corrplot(corr_mat,type = "lower", method = "number", 
+                  tl.col = "black", tl.cex = 0.5,number.cex = 0.7)
+```
+
+
+# Validate model's assumptions
+
+```{r, warning=FALSE}
+op<-par(mfrow=c(2,2))
+plot(m1)
+par(op)
+```
+
+# Model interpretation 
+
+
+```{r}
+plot(allEffects(m1))
+```
