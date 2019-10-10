@@ -296,7 +296,7 @@ car::Anova(m1)
 We see that the interaction variables *budget:yearcat*, *duration:genre*,
 *actor1fl:genre* and *castfl:genre* are significant, so we keep them in our model.
 Nevertheless, the variable *yearcat* seems to not be significant, so we could 
-remove it from our model. **PREGUNTAR SI TIENE SENTIDO QUEDARSE CON YEARCAT Y/O SUS INTERACCIONES**
+remove it from our model. **PREGUNTAR SI TIENE SENTIDO QUEDARSE CON YEARCAT Y/O SUS INTERACCIONES --> IF THE INTERACTION OF THE VARIABLE WITH OTHERS IS SIGNIFICANT BUT THE VARIABLE ITSELF IS NOT, WE KEEP BOTH VARIABLE AND INTERACTION.**
 
 # Check for multicollinearity
 
@@ -306,7 +306,7 @@ the variance-inflation factor.
 ```{r}
 car::vif(m1)
 ```
-**COMO SE LEE ESTE RESULTADO????**
+**COMO SE LEE ESTE RESULTADO???? --> LEER COLUMNA "NORMALIZADA" CUANDO TENEMOS CATEGORICAL VARIABLES. SI SALE > 5 ES POSIBLE QUE TENGA COLLINIARITY. TRY WITHOUT ONE THE VARIABLES WITH HIGH VIF AND SEE IF THE VIF IMPROVES. IF WE WANT TO BETTER INTERPRET THE RELATIONS WITH THE RESPONSE VARIABLES, WE WANT TO REMOVE THE COLLINIARITY TO BETTER INTERPRET THE COEFFICIENTS, EVEN WITH WORSE R^2.**
 
 $castfl$ and $actor1fl, actor2fl$ which are included in the model are correlated, 
 as well as $actor1fl$ and $actor2fl$. Consequently, the coefficients can't be directly interpreted. The following correlations confirm this idea:
@@ -319,7 +319,7 @@ corrplot::corrplot(corr_mat,type = "lower", method = "number",
 ```
 
 To proceed we would need to select which of this three correlated variables would result to a better model.
-```{r, message=FALSE,warning=FALSE,results='asis'}
+```{r}
 lm.actor1 <- update(m1,.~.-(castfl+actor2fl))
 lm.actor2 <- update(m1,.~.-(castfl+actor1fl))
 lm.cast <- update(m1,.~.-(actor1fl+actor2fl))
@@ -327,11 +327,6 @@ lm.cast <- update(m1,.~.-(actor1fl+actor2fl))
 glance(lm.actor1)
 glance(lm.actor2)
 glance(lm.cast)
-
-# outreg(list("LM with Actor1fl"=lm.actor1,
-#             "LM with Actor2fl"=lm.actor2,
-#             "LM with Castfl"=lm.cast),
-#        tight = FALSE)  #latex table
 ```
 
 Since we do not obtain a siginificantly better model with any of the variables, we conclude we need other information, such as domain expert knowledge, to decide which predictor to keep. In our case, we decide to keep *castfl* as its and added variable of the likes of the whole movie cast (it includes the other measures).
@@ -341,8 +336,10 @@ m1 <- update(m1,.~.-actor1fl-actor2fl)
 ```
 
 We check the *Anova* of the new model to see how it has changed.
+
 ```{r}
 car::Anova(m1)
+car::vif(m1)
 ```
 
 # Validate model's assumptions
@@ -359,3 +356,4 @@ par(op)
 ```{r}
 # plot(allEffects(m1))
 ```
+**TO INTERPRET VARIABLES WITH INTERACTIONS, WE PLOT THE EFFECT OF THE RESPONSE TO THE VARIABLE. WHEN INTERACTION IS WITH A CATEGORICAL VARIABLE THE EFFECTS ARE PLOTS STRATIFIED BY CATEGORICAL VARIABLE LEVEL.**
