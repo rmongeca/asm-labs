@@ -248,7 +248,7 @@ interaction between numerical-categorical.
 ```{r}
 rownames(imdb) <- imdb$movietitle
 imdb <- imdb %>% dplyr::select(-c(movietitle,titleyear))
-mc<-lm(gross~(.-genre-yearcat)*(genre+yearcat)+genre:yearcat, imdb)
+mc<-lm(gross~.*(genre+yearcat), imdb)
 
 glance(mc)
 ```
@@ -273,10 +273,15 @@ validate this model. We look into this with more detail with the final model.
 # Select significant variables
 
 We use the stepwise procedure, by using the $BIC$ criterion, to select the
-significant variables. Since our objective is the prediction of *gross* revenue per movie, we choose as starting point the complete model, in contrast to starting form the null which would result in a simpler model, albeit loss in predictability.
+significant variables. Since our objective is the prediction of *gross* revenue
+per movie, we choose as starting point the complete model, in contrast to starting 
+form the null which would result in a simpler model, albeit loss in predictability.
+
 ```{r}
 summary(m1<-step(mc,direction="both",k=log(nrow(imdb)), trace = 0))
 ```
+
+**CONSIDER STARTING STEPWISE PROCEDURE FROM NULL MODEL TO GET A SIMPLER MODEL BETTER FOR INTERPRETATION**
 
 Similarly to the complete model, we see that roughly 63% of the variance can be
 explained and the obtained p-value indicates that the overall model is significant.
