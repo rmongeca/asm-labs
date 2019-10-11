@@ -21,6 +21,7 @@ header-includes: |
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+set.seed(42)
 ```
 
 ```{r, echo = FALSE, message=FALSE, warning=FALSE,results="hide"}
@@ -99,11 +100,13 @@ data.frame(variable = names(imdb),
 ```
 
 We first check for any missing values and see that there are no NAs.
+
 ```{r}
 summary(imdb)
 ```
 
 Given the range of gross and budget we can switch to working in unit numbers by dividing by a million.
+
 ```{r}
 imdb<- imdb%>% 
         mutate(gross = gross/1000000,
@@ -125,6 +128,7 @@ So, it is not normal. We should consider that the skewness and kurtosis could be
 due to outliers.
 
 We look at an overview of the relationship between all variables in our dataset:
+
 ```{r}
 pairs(~.,imdb %>% select(-c(movietitle,genre, titleyear)))
 ```
@@ -204,7 +208,7 @@ imdb %>%
           upper = list(combo = wrap("box_no_facet", alpha=0.5),
                       continuous = wrap("cor", size=2, alignPercent=0.8))) +
   ggstyle+
-  theme(panel.grid.major = element_blank())    
+  theme(panel.grid.major = element_blank())
 ```
 
 We observe two outliers in the Action genre based on their $gross$ value, which turn out to be blockbusters.
@@ -241,9 +245,9 @@ On the other hand, we don't observe any differences between the different years.
 
 # Fit complete model
 
-We first fit the complete model including as predictors, all the numerical variables,
-the two categorical variables, the categorical-categorical interactions and the 
-interaction between numerical-categorical. 
+We first fit the complete model including as predictors, all the numerical
+variables, the two categorical variables, the categorical-categorical
+interactions and the interaction between numerical-categorical. 
 
 ```{r}
 rownames(imdb) <- imdb$movietitle
@@ -253,8 +257,8 @@ mc<-lm(gross~.*(genre+yearcat), imdb)
 glance(mc)
 ```
 
-Roughly 64% of the variance found in the response variable ($gross$) can be
-explained by the predictor variables. The obtained p-value ($omnibus test$)
+Roughly 64% of the variance found in the response variable (*gross*) can be
+explained by the predictor variables. The obtained p-value (*Omnibus test*)
 indicates that the overall model is significant. 
 
 ```{r, warning=FALSE}
@@ -263,32 +267,45 @@ plot(mc)
 par(op)
 ```
 
-From the *Normal Q-Q* plot we see that there is assymetry in the distribution and
-we can conclude that normality of the residuals is not met. From the 
-*Residuals vs Fitted$ plot*, we seek to validate the assumption of 
-homoskedasticity, which does not seem to hold in our case. What's more, we observe,
-a non random distribution of the points along the $y-axis$. All in all, we can't
-validate this model. We look into this with more detail with the final model.
+From the *Normal Q-Q* plot we see that there is assymetry in the distribution
+and we can conclude that normality of the residuals is not met. From the 
+*Scale vs Location* plot, we seek to validate the assumption of 
+homoskedasticity, which does not seem to hold in our case. What's more, from the
+*Residual vs Fitted* plot we observe, a non random distribution of the points
+along the *y-axis*. All in all, we can't validate this model. We look into this
+with more detail with the final model.
 
 # Select significant variables
 
 We use the stepwise procedure, by using the $BIC$ criterion, to select the
-significant variables. Since our objective is the prediction of *gross* revenue
-per movie, we choose as starting point the complete model, in contrast to starting 
-form the null which would result in a simpler model, albeit loss in predictability.
+significant variables. Since our objective is the interpretability of the model we
+choose as starting point the null model, in contrast to starting 
+form the complete.
+
+```{r}
+m0 <- lm(gross~1, imdb)
+summary(m1<-step(m0,scope=list(upper=mc), direction="both",
+                 k=log(nrow(imdb)), trace = 0))
+```
+
+Contrary to the complete model, we see that just 60% of the variance can be
+explained, although the obtained p-value indicates that the overall model is
+significant. However, we see that neither *actor1fl*, *actor2fl*, *castfl*,
+*directorfl*, *facenumber_in_poster* nor *yearcat* are included. For this
+reason, we consider exploring the stepwise procedure starting from the complete
+model.
 
 ```{r}
 summary(m1<-step(mc,direction="both",k=log(nrow(imdb)), trace = 0))
 ```
 
-**CONSIDER STARTING STEPWISE PROCEDURE FROM NULL MODEL TO GET A SIMPLER MODEL BETTER FOR INTERPRETATION**
-
 Similarly to the complete model, we see that roughly 63% of the variance can be
-explained and the obtained p-value indicates that the overall model is significant.
-
-In addition, we see that neither $actor3fl$ nor $directorfl$ are included in the
-model and hence, we could consider categorizing these variables as it was 
-mentioned in the exploratory analysis and see whether we obtain a better model.
+explained and the obtained p-value indicates that the overall model is
+significant. 
+In this case, we see that *actor3fl* is not included but *actor1fl*, *actor2fl*,
+*castfl* and *yearcat* are . Likewise, *directorfl* and *facenumber_in_poster*
+are not included in the model. We decide to continue our analysis with this 
+last model.
 
 When dealing with categorical variables we should use the $Anova$ method. The
 $p-value$ obtained will allow us to say if the interaction variables are
@@ -299,22 +316,34 @@ car::Anova(m1)
 ```
 
 We see that the interaction variables *budget:yearcat*, *duration:genre*,
-*actor1fl:genre* and *castfl:genre* are significant, so we keep them in our model.
-Nevertheless, the variable *yearcat* seems to not be significant, so we could 
-remove it from our model. **PREGUNTAR SI TIENE SENTIDO QUEDARSE CON YEARCAT Y/O SUS INTERACCIONES --> IF THE INTERACTION OF THE VARIABLE WITH OTHERS IS SIGNIFICANT BUT THE VARIABLE ITSELF IS NOT, WE KEEP BOTH VARIABLE AND INTERACTION.**
+*actor1fl:genre* and *castfl:genre* are significant, so we keep them in our
+model.
+Although the variable *yearcat* seems to not be significant, we decide to keep
+it in our model due to its interaction being significant.
 
 # Check for multicollinearity
 
-Strong associations between predictors will increase standard errors, and therefore 
-increase the probability of a type-II error. The diagnostic that we will use is 
-the variance-inflation factor. 
+Strong associations between predictors will increase standard errors, and
+therefore increase the probability of a type-II error, as well as affect the
+value of the coefficients. In order to detect it in our model, the diagnostic
+that we will use is the variance-inflation factor.
+
 ```{r}
 car::vif(m1)
 ```
-**COMO SE LEE ESTE RESULTADO???? --> LEER COLUMNA "NORMALIZADA" CUANDO TENEMOS CATEGORICAL VARIABLES. SI SALE > 5 ES POSIBLE QUE TENGA COLLINIARITY. TRY WITHOUT ONE THE VARIABLES WITH HIGH VIF AND SEE IF THE VIF IMPROVES. IF WE WANT TO BETTER INTERPRET THE RELATIONS WITH THE RESPONSE VARIABLES, WE WANT TO REMOVE THE COLLINIARITY TO BETTER INTERPRET THE COEFFICIENTS, EVEN WITH WORSE R^2.**
 
-$castfl$ and $actor1fl, actor2fl$ which are included in the model are correlated, 
-as well as $actor1fl$ and $actor2fl$. Consequently, the coefficients can't be directly interpreted. The following correlations confirm this idea:
+From the normalized inflation factor (second column in the previous output) we
+conclude that *actor1fl* and *castfl* may be causing multicollinearity in the
+model. This could be perhaps due to a correlation between them as we saw in the
+exploratory analysis. Consequently, the coefficients can't be directly
+interpreted.
+
+By definition a categorical variable that is included in an interaction term (as
+well as the interaction terms themselves) will have a high VIF factor and hence
+there is no reason to further investigate.
+
+The following figure confirms our suspicions about the correlated variables:
+
 ```{r}
 corr_mat=cor(imdb %>% 
               select_if(is.numeric) %>%
@@ -323,28 +352,32 @@ corrplot::corrplot(corr_mat,type = "lower", method = "number",
                   tl.col = "black", tl.cex = 0.5,number.cex = 0.7)
 ```
 
-To proceed we would need to select which of this three correlated variables would result to a better model.
+To proceed we would need to select which of this three correlated variables
+(*actor1fl*, *actor2fl* or *castfl*) would result in a better model and whether
+the VIF factor will be corrected.
+
 ```{r}
 lm.actor1 <- update(m1,.~.-(castfl+actor2fl))
 lm.actor2 <- update(m1,.~.-(castfl+actor1fl))
 lm.cast <- update(m1,.~.-(actor1fl+actor2fl))
 
 glance(lm.actor1)
+car::vif(lm.actor1)
 glance(lm.actor2)
+car::vif(lm.actor2)
 glance(lm.cast)
+car::vif(lm.cast)
 ```
 
-Since we do not obtain a siginificantly better model with any of the variables, we conclude we need other information, such as domain expert knowledge, to decide which predictor to keep. In our case, we decide to keep *castfl* as its and added variable of the likes of the whole movie cast (it includes the other measures).
+Comparing the $R^2$ between the 3 models we see that we do not obtain a
+siginificantly better model with any of the variables. On the other hand,
+looking at the change in the VIF we can conclude that best correction is
+obtained by the *castfl* model. Given that we lack expert domain knowledge to
+guide us we decide to keep *castfl* as it is an added variable of the likes of
+the whole movie cast (it includes the other measures).
 
 ```{r}
 m1 <- update(m1,.~.-actor1fl-actor2fl)
-```
-
-We check the *Anova* of the new model to see how it has changed.
-
-```{r}
-car::Anova(m1)
-car::vif(m1)
 ```
 
 # Validate model's assumptions
@@ -355,7 +388,47 @@ plot(m1)
 par(op)
 ```
 
-# Model interpretation 
+From the *Normal Q-Q* plot we see that there is still assymetry in the
+distribution and we can conclude that normality of the residuals is not met.
+
+To look at the *Residual vs Fitted* plot in more detail, we plot it for each
+predictor.
+
+```{r}
+car::residualPlots(m1)
+```
+
+Looking at both the figures, as well as, the curvature test, we conclude that a
+quadratic term is not needed for any of the variables.
+
+From the *Scale-Location* plot, we seek to validate the assumption of
+homoskedasticity, which does not seem to hold in our case.
+Consequently, we consider a log transformation to both *gross* and *budget*
+measures and see whether the obtained model better meets the assumptions.
+
+```{r}
+mlog <- lm(log10(gross) ~ log10(budget) + duration + castfl + genre + yearcat +
+             budget:yearcat + duration:genre + actor1fl:genre + castfl:genre,
+           data = imdb)
+glance(mlog)
+op<-par(mfrow=c(2,2))
+plot(mlog)
+par(op)
+```
+
+We now have better agreement with the model's assumptions at the cost of a
+decrease in the model's $R^2$.
+
+Regarding the *Residuals vs Leverage* plot, we see that with our regular final
+model, without the logs, there are some points that are influential and could be
+considered to be outliers. However, in the transformed model they do not appear
+to be so.
+
+Having mentioned that, we decide to keep the previous model for the
+interpretation part as it has a better fit with our data and it has a more
+intuitive interpretation.
+
+# Model interpretation
 
 
 ```{r}
