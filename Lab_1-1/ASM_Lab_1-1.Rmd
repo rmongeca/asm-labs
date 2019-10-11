@@ -160,8 +160,11 @@ and 2011-2016 based on the $titleyear$ of the movie.
 
 ```{r}
 imdb <- imdb%>%
-        mutate(yearcat = ifelse(titleyear< 2006, "2000-2005", 
-                          ifelse(titleyear< 2011, "2006-2010","2011-2016" ))) 
+        mutate(yearcat = as.factor(
+                          ifelse(titleyear< 2006, "2000-2005", 
+                          ifelse(titleyear< 2011, "2006-2010","2011-2016" ))
+                          ),
+               genre = as.factor(genre))
 ggplot(imdb%>%
          group_by(titleyear,yearcat)%>% 
          summarise(movies = n()) ,
@@ -357,9 +360,9 @@ To proceed we would need to select which of this three correlated variables
 the VIF factor will be corrected.
 
 ```{r}
-lm.actor1 <- update(m1,.~.-(castfl+actor2fl))
-lm.actor2 <- update(m1,.~.-(castfl+actor1fl))
-lm.cast <- update(m1,.~.-(actor1fl+actor2fl))
+lm.actor1 <- update(m1,.~.-(castfl+actor2fl+castfl:genre))
+lm.actor2 <- update(m1,.~.-(castfl+actor1fl+castfl:genre+actor1fl:genre))
+lm.cast <- update(m1,.~.-(actor1fl+actor2fl+actor1fl:genre))
 
 glance(lm.actor1)
 car::vif(lm.actor1)
@@ -377,7 +380,7 @@ guide us we decide to keep *castfl* as it is an added variable of the likes of
 the whole movie cast (it includes the other measures).
 
 ```{r}
-m1 <- update(m1,.~.-actor1fl-actor2fl)
+m1 <- update(m1,.~.-(actor1fl+actor2fl+actor1fl:genre))
 ```
 
 # Validate model's assumptions
@@ -408,7 +411,7 @@ measures and see whether the obtained model better meets the assumptions.
 
 ```{r}
 mlog <- lm(log10(gross) ~ log10(budget) + duration + castfl + genre + yearcat +
-             budget:yearcat + duration:genre + actor1fl:genre + castfl:genre,
+             budget:yearcat + duration:genre + castfl:genre,
            data = imdb)
 glance(mlog)
 op<-par(mfrow=c(2,2))
@@ -424,14 +427,31 @@ model, without the logs, there are some points that are influential and could be
 considered to be outliers. However, in the transformed model they do not appear
 to be so.
 
-Having mentioned that, we decide to keep the previous model for the
-interpretation part as it has a better fit with our data and it has a more
-intuitive interpretation.
+Having mentioned that, we decide to keep the previous model as it has a better
+fit with our data and a more intuitive interpretation.
 
 # Model interpretation
 
+For the model interpretation, we will use the *effect* plots to interpret the coefficients of our final model, taking into account the interaction terms.
+
+In first place, we look at the effect of the budget variable.
+```{r}
+m1.effects <- effects::allEffects(m1)
+plot(m1.effects, "budget:yearcat")
+```
+
+We clearly see a similar linear increase across all categories of the *yearcat* variable, being almost identical for *2000-2005* and *2006-2010* and slightly flatter for *2011-2016*. This means that the more budget a movie has, the more probable it is it has a bigger revenue. Specifically, it means that for every additional million dollars of budget we have an increase of `r m1$coefficients["budget"]`, `r m1$coefficients["budget"] + m1$coefficients["budget:yearcat2006-2010"]` and `r m1$coefficients["budget"] + m1$coefficients["budget:yearcat2011-2016"]` million dollars in gross revenue, respectively for each category.
 
 ```{r}
-# plot(allEffects(m1))
+plot(m1.effects, "duration:genre")
 ```
-**TO INTERPRET VARIABLES WITH INTERACTIONS, WE PLOT THE EFFECT OF THE RESPONSE TO THE VARIABLE. WHEN INTERACTION IS WITH A CATEGORICAL VARIABLE THE EFFECTS ARE PLOTS STRATIFIED BY CATEGORICAL VARIABLE LEVEL.**
+
+Overall, the duration of Drama and Terror movies cause a lesser increase to the gross revenue than Action and Comedy. Specifically, for every increase in 1 minute the gross revenue increases `r m1$coefficients["duration"] + m1$coefficients["duration:genreDrama"]` and `r m1$coefficients["duration"] + m1$coefficients["duration:genreTerror"]` million dollars for Drama and Terror respectively. On the other hand, for every increase in 1 minute in Action and Comedy movies gross revenue increases `r m1$coefficients["duration"]` and `r m1$coefficients["duration"] + m1$coefficients["duration:genreComedy"]` million dollars respectively.
+
+```{r}
+plot(m1.effects, "castfl:genre")
+```
+
+Contrary to the effect of *duration*, we now sauses a higher increase to the gross revenue compared to Terror and Comedy. Specifically, for every thousand cast likes the gross revenue increases `r 1000*m1$coefficients["castfl"]` and `r 1000*m1$coefficients["castfl"] + 1000*m1$coefficients["castfl:genreDrama"]` million dollars for Action and Drama respectively. On the other hand, for every thousand cast likes in Comedy and Terror movies gross revenue increases `r 1000*m1$coefficients["castfl"] + 1000*m1$coefficients["castfl:genreComedy"]` and `r 1000*m1$coefficients["castfl"] + 1000*m1$coefficients["castfl:genreTerror"]` million dollars respectively.
+
+In conclusion, the defining attributes that make up a movie (i.e. budget, duration and cast) seem to have a time invariant, but genre dependent, relation to the gross revenue. 
