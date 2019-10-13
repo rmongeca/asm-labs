@@ -49,7 +49,7 @@ requireorinstall=function(package=""){
 
 requireorinstall(c("knitr","kableExtra","ggplot2","ggsci","dplyr","tidyr","lmtest",
                    "tidyverse","broom","purrr","magrittr","grid","gridExtra","scales",
-                   "GGally","fBasics", "car", "effects", "emmeans","rockchalk"))
+                   "GGally","fBasics", "car", "effects", "emmeans"))
 
 ## theme definition for ggplot 
 ggstyle = theme(panel.grid.major = element_blank(),
@@ -84,27 +84,29 @@ ggstyleFonts = theme(axis.title.x = element_text(size = 10,
 
 ```
 
+The IMDB dataset contains information of 940 films between 2000 and 2016. The data 
+has been obtained form the http:\\www.imdb.com webpage. The data includes the *movietitle*
+of the film, its *genre* (*Action/Comedy/Drama/Terror*) and the following attributes:
 
-```{r}
-############################################################
-###############       DATA LOAD             ############### 
-############################################################
-
+```{r,warning=FALSE,echo = FALSE,results="asis"}
 imdb <- read.csv("IMDB.csv", stringsAsFactors = F, sep=";")
 
+imdbNum <-  imdb%>% dplyr::select(-c(movietitle,genre))
 
-data.frame(variable = names(imdb),
-           class = sapply(imdb, class),
-           first_values = sapply(imdb, function(x) paste0(head(x),collapse = ", ")),
-           row.names = NULL)
+data.frame(variable = names(imdbNum),
+           class = sapply(imdbNum, class),
+           min = sapply(imdbNum, function(x) min(x)),
+           mean = sapply(imdbNum, function(x) mean(x)),
+           median =  sapply(imdbNum, function(x) median(x)),
+           max = sapply(imdbNum, function(x) max(x)),
+           row.names = NULL)   %>%
+  kable(format = "latex", booktabs = TRUE,
+        caption = "Dataset statistics" ,digits = 2) %>% 
+  kable_styling(position = "center",font_size = 9,
+                latex_options = c("HOLD_position"))
 ```
 
 We first check for any missing values and see that there are no NAs.
-
-```{r}
-summary(imdb)
-```
-
 Given the range of gross and budget we can switch to working in unit numbers by dividing by a million.
 
 ```{r}
@@ -118,8 +120,12 @@ imdb<- imdb%>%
 We are interested in predicting the gross of a movie basic on its 
 characteristics. First let's analyze the target variable.
 
-```{r}
-basicStats(imdb%>%dplyr::select(gross))
+```{r, echo = FALSE,results='asis'}
+basicStats(imdb%>%dplyr::select(gross))%>% 
+  kable(format = "latex", booktabs = TRUE ) %>% 
+  kable_styling(position = "center",
+                font_size = 9,
+                latex_options = c("HOLD_position"))
 ```
 
 Using the basicStats we obtain the excess kurtosis, $K(X)-3$ and we see that we 
@@ -129,15 +135,18 @@ due to outliers.
 
 We look at an overview of the relationship between all variables in our dataset:
 
-```{r}
+```{r, echo = FALSE,fig.align="center",out.width = "300pt"}
 pairs(~.,imdb %>% select(-c(movietitle,genre, titleyear)))
 ```
-In this plot we observe that some variables seem to be correlated, such as $actor1fl$ with $castfl$, as well as, $budget$ with $duration$. However, this correlation would present a problem, in the form of multicolinearity, in the 
-case that both variables were to be included in the final model.
 
-We now look closer into the relation between $gross$ and all the numerical 
+In this plot we observe that some variables seem to be correlated, such as *actor1fl* 
+with *castfl*, as well as, *budget* with *duration*. However, this correlation would 
+present a problem, in the form of multicolinearity, in the case that both variables 
+were to be included in the final model.
+
+We now look closer into the relation between *gross* and all the numerical 
 variables.
-```{r}
+```{r, echo = FALSE,fig.align="center",out.width = "300pt"}
 imdb %>% 
   select(-c(movietitle,genre, titleyear)) %>%
   gather(-gross, key = "some_var_name", value = "some_value_name") %>%
@@ -149,22 +158,23 @@ imdb %>%
         axis.title.x = element_blank())
 ```
 
-We observe more of a linear relation between the pairs of gross and budget, as 
-well as with, duration. We can't discern any pattern between the pairs of gross 
-and the Facebook variables: $directorfl,actor1fl,actor2fl,actor3fl,castfl$. 
-The $actor3fl,directorfl$ could be separated in 2 clusters at the cutoff point 
+We observe more of a linear relation between the pairs of *gross* and *budget*, as 
+well as with, *duration*. We can't discern any pattern between the pairs of *gross* 
+and the Facebook variables: *directorfl,actor1fl,actor2fl,actor3fl,castfl*. 
+The *actor3fl,directorfl* could be separated in 2 clusters at the cutoff point 
 of 5000 likes and for the latter at the cutoff point of 10000 likes.
 
-We create a categorial variable ($yearcat$) with 3 levels: 2000-2005, 2006-2010 
-and 2011-2016 based on the $titleyear$ of the movie.
+We create a categorial variable (*yearcat*) with 3 levels: 2000-2005, 2006-2010 
+and 2011-2016 based on the *titleyear* of the movie.
 
-```{r}
+```{r, echo = FALSE,fig.align="center",out.width = "250pt"}
 imdb <- imdb%>%
         mutate(yearcat = as.factor(
                           ifelse(titleyear< 2006, "2000-2005", 
                           ifelse(titleyear< 2011, "2006-2010","2011-2016" ))
                           ),
                genre = as.factor(genre))
+
 ggplot(imdb%>%
          group_by(titleyear,yearcat)%>% 
          summarise(movies = n()) ,
@@ -179,7 +189,7 @@ ggplot(imdb%>%
 ```
 
 
-```{r}
+```{r, echo = FALSE,results="asis"}
 imdb%>%
   group_by(titleyear,yearcat)%>%
   summarise(movies = n()) %>%
@@ -187,17 +197,20 @@ imdb%>%
   mutate(avgMovies = mean(movies)) %>%
   summarise(movies = sum(movies),
             avgMovies = max(avgMovies)) %>%
-  mutate(pcn = movies/sum(movies))
+  mutate(pcn = movies/sum(movies))  %>%
+  kable(format = "latex", booktabs = TRUE,digits = 2) %>% 
+  kable_styling(position = "center",font_size = 9,
+                latex_options = c("HOLD_position"))
 ```
 
 The movies are roughly uniformly distributed between the three categories.
-However, on average more movies were released between the years 2006 and 2010. 
+However, on average, more movies were released between the years 2006 and 2010. 
 In addition, based on the significant difference between 2016 and all the previous
 years it is highly probable that we don't have data for the whole year. 
-So, we have two categorical variables: the year category and the genre. 
-Let's see how the economical variables relates to $genre$. 
+So, we have two categorical variables: the *year category* and the *genre*. 
+Let's see how the economical variables relates to *genre*. 
 
-```{r,message = FALSE}
+```{r,message = FALSE, echo = FALSE,fig.align="center",out.width = "350pt"}
 imdb %>% 
   select(c(budget,duration,gross,genre)) %>% 
   ggpairs(.,
@@ -214,20 +227,21 @@ imdb %>%
   theme(panel.grid.major = element_blank())
 ```
 
-We observe two outliers in the Action genre based on their $gross$ value, which turn out to be blockbusters.
+We observe two outliers in the Action genre based on their *gross* value, which 
+turn out to be blockbusters.
 ```{r}
 imdb %>% dplyr::filter(gross> 600) %>% pull(movietitle)
 ```
 
-The distribution of $gross$ for the Action genre is skewed to the right and has 
+The distribution of *gross* for the Action genre is skewed to the right and has 
 a higher IQR than the rest of the genres. However, it is also the genre with 
 the smallest number of movies.
-Similarly, $budget$ has excess kurtosis with more heavier tails than $gross$
+Similarly, *budget* has excess kurtosis with more heavier tails than *gross*
 especially for the action movies.
-In the linear relation that we observed before between $gross$ and $budget$ we 
+In the linear relation that we observed before between *gross* and *budget* we 
 add now the genre which confirms this relation, particularly more for the Action movies.
 
-```{r,message = FALSE}
+```{r, echo = FALSE,message = FALSE,fig.align="center",out.width = "350pt"}
 imdb %>% 
   select(c(budget,duration,gross,yearcat)) %>% 
   ggpairs(.,
@@ -252,19 +266,29 @@ We first fit the complete model including as predictors, all the numerical
 variables, the two categorical variables, the categorical-categorical
 interactions and the interaction between numerical-categorical. 
 
-```{r}
+```{r,echo=FALSE}
 rownames(imdb) <- imdb$movietitle
 imdb <- imdb %>% dplyr::select(-c(movietitle,titleyear))
-mc<-lm(gross~.*(genre+yearcat), imdb)
+```
 
-glance(mc)
+```{r}
+mc<-lm(gross~.*(genre+yearcat), imdb)
+```
+
+```{r,echo=FALSE,results='asis'}
+glance(mc) %>%
+  kable(format = "latex", booktabs = TRUE,
+        caption = "Complete model" ) %>% 
+  kable_styling(position = "center",
+                font_size = 9,
+                latex_options = c("HOLD_position"))
 ```
 
 Roughly 64% of the variance found in the response variable (*gross*) can be
 explained by the predictor variables. The obtained p-value (*Omnibus test*)
 indicates that the overall model is significant. 
 
-```{r, warning=FALSE}
+```{r, warning=FALSE, echo = FALSE,fig.align="center",out.width = "350pt"}
 op<-par(mfrow=c(2,2))
 plot(mc)
 par(op)
@@ -287,19 +311,21 @@ form the complete.
 
 ```{r}
 m0 <- lm(gross~1, imdb)
-summary(m1<-step(m0,scope=list(upper=mc), direction="both",
-                 k=log(nrow(imdb)), trace = 0))
+m1<-step(m0,scope=list(upper=mc), direction="both",
+                k=log(nrow(imdb)), trace = 0)
+summary(m1)
 ```
 
 Contrary to the complete model, we see that just 60% of the variance can be
-explained, although the obtained p-value indicates that the overall model is
+explained, although, the obtained p-value indicates that the overall model is
 significant. However, we see that neither *actor1fl*, *actor2fl*, *castfl*,
 *directorfl*, *facenumber_in_poster* nor *yearcat* are included. For this
 reason, we consider exploring the stepwise procedure starting from the complete
 model.
 
 ```{r}
-summary(m1<-step(mc,direction="both",k=log(nrow(imdb)), trace = 0))
+m1<-step(mc,direction="both",k=log(nrow(imdb)), trace = 0)
+summary(m1)
 ```
 
 Similarly to the complete model, we see that roughly 63% of the variance can be
@@ -314,8 +340,13 @@ When dealing with categorical variables we should use the $Anova$ method. The
 $p-value$ obtained will allow us to say if the interaction variables are
 significant. 
 
-```{r}
-car::Anova(m1)
+```{r, echo = FALSE,results='asis'}
+car::Anova(m1)%>% 
+  kable(format = "latex", booktabs = TRUE,
+        caption = "Anova Table for stepwise obtained model" ) %>% 
+  kable_styling(position = "center",
+                font_size = 9,
+                latex_options = c("HOLD_position"))
 ```
 
 We see that the interaction variables *budget:yearcat*, *duration:genre*,
@@ -327,12 +358,17 @@ it in our model due to its interaction being significant.
 # Check for multicollinearity
 
 Strong associations between predictors will increase standard errors, and
-therefore increase the probability of a type-II error, as well as affect the
+therefore increase the probability of a *type-II error*, as well as affect the
 value of the coefficients. In order to detect it in our model, the diagnostic
-that we will use is the variance-inflation factor.
+that we will use is the *variance-inflation factor*.
 
-```{r}
-car::vif(m1)
+```{r, echo = FALSE,results='asis'}
+car::vif(m1)%>% 
+  kable(format = "latex", booktabs = TRUE,
+        caption = "VIF for stepwise obtained model" ) %>% 
+  kable_styling(position = "center",
+                font_size = 9,
+                latex_options = c("HOLD_position"))
 ```
 
 From the normalized inflation factor (second column in the previous output) we
@@ -347,7 +383,7 @@ there is no reason to further investigate.
 
 The following figure confirms our suspicions about the correlated variables:
 
-```{r}
+```{r,echo = FALSE,fig.align="center",out.width = "250pt"}
 corr_mat=cor(imdb %>% 
               select_if(is.numeric) %>%
                select(-c(gross)),method="s")
@@ -357,19 +393,66 @@ corrplot::corrplot(corr_mat,type = "lower", method = "number",
 
 To proceed we would need to select which of this three correlated variables
 (*actor1fl*, *actor2fl* or *castfl*) would result in a better model and whether
-the VIF factor will be corrected.
+the *VIF* factor will be corrected.
 
 ```{r}
 lm.actor1 <- update(m1,.~.-(castfl+actor2fl+castfl:genre))
-lm.actor2 <- update(m1,.~.-(castfl+actor1fl+castfl:genre+actor1fl:genre))
-lm.cast <- update(m1,.~.-(actor1fl+actor2fl+actor1fl:genre))
+```
 
-glance(lm.actor1)
-car::vif(lm.actor1)
-glance(lm.actor2)
-car::vif(lm.actor2)
-glance(lm.cast)
-car::vif(lm.cast)
+```{r, echo=FALSE,results='asis' }
+glance(lm.actor1)%>% 
+  kable(format = "latex", booktabs = TRUE,
+        caption = "Model with actor1fl" ) %>% 
+  kable_styling(position = "center",
+                font_size = 9,
+                latex_options = c("HOLD_position"))
+
+car::vif(lm.actor1)%>% 
+  kable(format = "latex", booktabs = TRUE,
+        caption = "VIF for Model with actor1fl" ) %>% 
+  kable_styling(position = "center",
+                font_size = 9,
+                latex_options = c("HOLD_position"))
+```
+
+```{r}
+lm.actor2 <- update(m1,.~.-(castfl+actor1fl+castfl:genre+actor1fl:genre))
+```
+
+```{r, echo=FALSE,results='asis' }
+glance(lm.actor2)%>% 
+  kable(format = "latex", booktabs = TRUE,
+        caption = "Model with actor2fl" ) %>% 
+  kable_styling(position = "center",
+                font_size = 9,
+                latex_options = c("HOLD_position"))
+
+car::vif(lm.actor2)%>% 
+  kable(format = "latex", booktabs = TRUE,
+        caption = "VIF for Model with actor2fl" ) %>% 
+  kable_styling(position = "center",
+                font_size = 9,
+                latex_options = c("HOLD_position"))
+```
+
+```{r}
+lm.cast <- update(m1,.~.-(actor1fl+actor2fl+actor1fl:genre))
+```
+
+```{r, echo=FALSE,results='asis' }
+glance(lm.cast)%>% 
+  kable(format = "latex", booktabs = TRUE,
+        caption = "Model with castfl" ) %>% 
+  kable_styling(position = "center",
+                font_size = 9,
+                latex_options = c("HOLD_position"))
+
+car::vif(lm.cast)%>% 
+  kable(format = "latex", booktabs = TRUE,
+        caption = "VIF for Model with actor2fl" ) %>% 
+  kable_styling(position = "center",
+                font_size = 9,
+                latex_options = c("HOLD_position"))
 ```
 
 Comparing the $R^2$ between the 3 models we see that we do not obtain a
@@ -385,7 +468,7 @@ m1 <- update(m1,.~.-(actor1fl+actor2fl+actor1fl:genre))
 
 # Validate model's assumptions
 
-```{r, warning=FALSE}
+```{r, warning=FALSE, echo=FALSE,fig.align="center",out.width = "350pt"}
 op<-par(mfrow=c(2,2))
 plot(m1)
 par(op)
@@ -394,10 +477,10 @@ par(op)
 From the *Normal Q-Q* plot we see that there is still assymetry in the
 distribution and we can conclude that normality of the residuals is not met.
 
-To look at the *Residual vs Fitted* plot in more detail, we plot it for each
+We look at the *Residual vs Fitted* plot in more detail by plotting it for each
 predictor.
 
-```{r}
+```{r,fig.align="center",out.width = "350pt"}
 car::residualPlots(m1)
 ```
 
@@ -413,7 +496,18 @@ measures and see whether the obtained model better meets the assumptions.
 mlog <- lm(log10(gross) ~ log10(budget) + duration + castfl + genre + yearcat +
              budget:yearcat + duration:genre + castfl:genre,
            data = imdb)
-glance(mlog)
+```
+
+```{r, echo=FALSE,results='asis'}
+glance(mlog)%>% 
+  kable(format = "latex", booktabs = TRUE,
+        caption = "Model with log transformation" ) %>% 
+  kable_styling(position = "center",
+                font_size = 9,
+                latex_options = c("HOLD_position"))
+```
+
+```{r, echo=FALSE,fig.align="center",out.width = "350pt"}
 op<-par(mfrow=c(2,2))
 plot(mlog)
 par(op)
@@ -422,10 +516,9 @@ par(op)
 We now have better agreement with the model's assumptions at the cost of a
 decrease in the model's $R^2$.
 
-Regarding the *Residuals vs Leverage* plot, we see that with our regular final
-model, without the logs, there are some points that are influential and could be
-considered to be outliers. However, in the transformed model they do not appear
-to be so.
+In the *Residuals vs Leverage* plot, of the our refined model, without the logs, 
+there are some points that are influential and could be considered to be outliers. 
+However, in the transformed model they do not appear to be so.
 
 Having mentioned that, we decide to keep the previous model as it has a better
 fit with our data and a more intuitive interpretation.
@@ -435,23 +528,23 @@ fit with our data and a more intuitive interpretation.
 For the model interpretation, we will use the *effect* plots to interpret the coefficients of our final model, taking into account the interaction terms.
 
 In first place, we look at the effect of the budget variable.
-```{r}
+```{r,fig.align="center",out.width = "250pt"}
 m1.effects <- effects::allEffects(m1)
 plot(m1.effects, "budget:yearcat")
 ```
 
 We clearly see a similar linear increase across all categories of the *yearcat* variable, being almost identical for *2000-2005* and *2006-2010* and slightly flatter for *2011-2016*. This means that the more budget a movie has, the more probable it is it has a bigger revenue. Specifically, it means that for every additional million dollars of budget we have an increase of `r m1$coefficients["budget"]`, `r m1$coefficients["budget"] + m1$coefficients["budget:yearcat2006-2010"]` and `r m1$coefficients["budget"] + m1$coefficients["budget:yearcat2011-2016"]` million dollars in gross revenue, respectively for each category.
 
-```{r}
+```{r,fig.align="center",out.width = "250pt"}
 plot(m1.effects, "duration:genre")
 ```
 
 Overall, the duration of Drama and Terror movies cause a lesser increase to the gross revenue than Action and Comedy. Specifically, for every increase in 1 minute the gross revenue increases `r m1$coefficients["duration"] + m1$coefficients["duration:genreDrama"]` and `r m1$coefficients["duration"] + m1$coefficients["duration:genreTerror"]` million dollars for Drama and Terror respectively. On the other hand, for every increase in 1 minute in Action and Comedy movies gross revenue increases `r m1$coefficients["duration"]` and `r m1$coefficients["duration"] + m1$coefficients["duration:genreComedy"]` million dollars respectively.
 
-```{r}
+```{r,fig.align="center",out.width = "250pt"}
 plot(m1.effects, "castfl:genre")
 ```
 
-Contrary to the effect of *duration*, we now sauses a higher increase to the gross revenue compared to Terror and Comedy. Specifically, for every thousand cast likes the gross revenue increases `r 1000*m1$coefficients["castfl"]` and `r 1000*m1$coefficients["castfl"] + 1000*m1$coefficients["castfl:genreDrama"]` million dollars for Action and Drama respectively. On the other hand, for every thousand cast likes in Comedy and Terror movies gross revenue increases `r 1000*m1$coefficients["castfl"] + 1000*m1$coefficients["castfl:genreComedy"]` and `r 1000*m1$coefficients["castfl"] + 1000*m1$coefficients["castfl:genreTerror"]` million dollars respectively.
+Contrary to the effect of *duration*, we now have a higher increase to the gross revenue compared to Terror and Comedy. Specifically, for every thousand cast likes the gross revenue increases `r 1000*m1$coefficients["castfl"]` and `r 1000*m1$coefficients["castfl"] + 1000*m1$coefficients["castfl:genreDrama"]` million dollars for Action and Drama respectively. On the other hand, for every thousand cast likes in Comedy and Terror movies gross revenue increases `r 1000*m1$coefficients["castfl"] + 1000*m1$coefficients["castfl:genreComedy"]` and `r 1000*m1$coefficients["castfl"] + 1000*m1$coefficients["castfl:genreTerror"]` million dollars respectively.
 
 In conclusion, the defining attributes that make up a movie (i.e. budget, duration and cast) seem to have a time invariant, but genre dependent, relation to the gross revenue. 
