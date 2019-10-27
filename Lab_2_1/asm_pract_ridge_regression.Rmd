@@ -1,0 +1,352 @@
+---
+title: | 
+  | \LARGE ASM Practice 
+subtitle: "Ridge Regression"
+author: "Maria Gkotsopoulou & Ricard Monge Calvo & Amalia Vradi"
+date: "27/10/2019"
+geometry: margin=1.5cm
+output: 
+  pdf_document: 
+    latex_engine: xelatex
+fontsize: 11pt
+spacing: single
+subparagraph: yes
+header-includes: |
+  \usepackage{titlesec}
+  \usepackage{subfig}
+  \titlespacing{\section}{0pt}{10pt plus 1pt minus 1pt}{0pt plus 1pt minus 1pt}
+  \titlespacing{\subsection}{0pt}{10pt plus 1pt minus 1pt}{0pt plus 1pt minus 1pt}
+  \titlespacing{\subsubsection}{0pt}{10pt plus 1pt minus 1pt}{0pt plus 1pt minus 1pt}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+set.seed(42)
+```
+
+```{r, echo = FALSE, message=FALSE, warning=FALSE, results="hide"}
+requireorinstall=function(package=""){
+  reqpac=parse(text=paste("require(",as.character(package),")"))
+  if(eval(reqpac)){
+    print(paste(as.character(package), "has been loaded correctly"))
+  } else {
+    print(paste("trying to install" ,as.character(package)))
+    eval(parse(text=paste("try(install.packages(",as.character(package),"))")))
+    if(eval(reqpac)){
+      print(paste(as.character(package) ,"has been installed and loaded correctly"))
+    } else {
+      warning(paste("could not install",as.character(package)))
+    }
+  }
+}
+requireorinstall(c("GGally","broom","car","caret","dplyr","ggplot2","ggsci","grid","gridExtra","kableExtra","knitr","lmtest","purrr","scales","tidyr","tidyverse"))
+## theme definition for ggplot 
+ggstyle = theme(panel.grid.major = element_blank(),
+                panel.grid.minor = element_blank(),
+                panel.background = element_blank(),
+                axis.line = element_blank(),
+                axis.title.x = element_text(size = 10,
+                                            vjust=0.1),
+                axis.title.y = element_text(size = 10,
+                                            vjust=1.5),
+                axis.text.y = element_text(size=9),
+                axis.text.x = element_text(size=9,
+                                           angle = 45,
+                                           vjust = 1,
+                                           hjust=1),
+                plot.title = element_text(size=11),
+                legend.text = element_text( size=8),
+                legend.title = element_text( size=9))
+ggstyleFonts = theme(axis.title.x = element_text(size = 10,
+                                                 vjust=0.1),
+                     axis.title.y = element_text(size = 10,
+                                                 vjust=1.5),
+                     axis.text.y = element_text(size=9),
+                     axis.text.x = element_text(size=9,
+                                                angle = 45,
+                                                vjust = 1,
+                                                hjust=1),
+                     plot.title = element_text(size=11),
+                     legend.text = element_text( size=8),
+                     legend.title = element_text( size=9))
+
+```
+```{r, echo=FALSE}
+load("boston.Rdata")
+data <- boston.c %>% select(-TOWN, -CHAS)
+validation.size <- round(nrow(data)/3)
+validation.ind <- sample(nrow(data), size = validation.size)
+validation <- data[validation.ind,]
+training <- data[-validation.ind,]
+```
+
+1. Ridge regression lambda search
+
+```{r, echo=FALSE}
+ridge_lambda_search <- function(
+  x, y,
+  x.valid,
+  y.valid,
+  lambda.v,
+  plot=TRUE
+) {
+  
+  # Ensure x/y are matrix/vector
+  if(!is.matrix(x)) {
+    x <- as.matrix(x)
+  }
+  if(!is.vector(y)) {
+    y <- y[,,drop=TRUE]
+  }
+  if(!is.matrix(x.valid)) {
+    x.valid <- as.matrix(x.valid)
+  }
+  if(!is.vector(y.valid)) {
+    y.valid <- y.valid[,,drop=TRUE]
+  }
+  
+  # Create data.frame to store output
+  if(!is.vector(lambda.v)) {
+    lambda.v <- lambda.v[,,drop=TRUE]
+  }
+  n <- length(lambda.v)
+  out <- data.frame(lambda=lambda.v, mspe=rep(0,n), df=rep(0,n))
+  
+  # Get x Singular Value Decomposition
+  x.svd <- svd(x)
+  d <- x.svd$d
+  v <- x.svd$v
+
+  # Per lambda candidate compute coefficients, MSPE and df
+  for(i in 1:n) {
+    lambda <- lambda.v[i]
+    # Compute (D^2 - lambda*Id)^-1
+    d_inv <- diag(1/(d*d - lambda))
+    # Compute (X^TX + lambda*Id)^-1
+    xx_inv <- v %*% d_inv %*% t(v)
+    # Compute b_ridge
+    b <- xx_inv %*% t(x) %*% y
+    # Compute MSPE
+    mspe <- lambda*sum(b^2) + sum(y.valid - x.valid %*% b)
+    # Compute H such that y_ridge = H*y
+    h <- x %*% xx_inv %*% t(x)
+    # Compute df
+    df <- sum(diag(h))
+    # Add results to output
+    out$mspe[i] <- mspe
+    out$df[i] <- df
+  }
+  
+  if(plot) {
+    df.plot <- data.frame(l=out$lambda,
+                          log=log(1+out$lambda) -1,
+                          df=out$df,
+                          mspe=out$mspe)
+    ggplot(df.plot) +
+      geom_line(aes(x=log, y=mspe), colour="red") +
+      geom_line(aes(x=df, y=mspe), colour="green")
+  }
+  
+  return(out)
+  
+}
+
+# Test data for function run
+validation.size <- round(nrow(data)/3)
+validation.ind <- sample(nrow(data), size = validation.size)
+validation <- data[validation.ind,]
+training <- data[-validation.ind,]
+# We assume response variable is LSTAT
+x <- training %>% select(-LSTAT)
+y <- training %>% select(LSTAT)
+x.valid <- validation %>% select(-LSTAT)
+y.valid <- validation %>% select(LSTAT)
+# Lambda test values
+lambda.v <- 10^(-3:2)
+# Function run
+(ridge_lambda_search(x, y, x.valid, y.valid, lambda.v))
+```
+
+2. Ridge regression lambda search with CV
+
+```{r, echo=FALSE}
+ridge_lambda_search_cv <- function(
+  x, y, lambda.v,
+  cv=10,
+  plot=TRUE
+) {
+  
+  # Ensure x/y are matrix/vector
+  if(!is.matrix(x)) {
+    x <- as.matrix(x)
+  }
+  if(!is.vector(y)) {
+    y <- y[,,drop=TRUE]
+  }
+  
+  # Create data.frame to store output
+  if(!is.vector(lambda.v)) {
+    lambda.v <- lambda.v[,,drop=TRUE]
+  }
+  n <- length(lambda.v)
+  out <- data.frame(lambda=lambda.v, mspe=rep(0,n), df=rep(0,n))
+
+  # Per lambda candidate compute coefficients, MSPE and df
+  for(i in 1:n) {
+    lambda <- lambda.v[i]
+    # Create folds for CV
+    folds <- createFolds(1:nrow(x), k = cv)
+    # Create fold out data.frame
+    out.cv <- data.frame(mspe=rep(0,cv), df=rep(0,cv))
+    for(j in 1:cv) {
+      fold <- folds[[j]]
+      # Get training and validation data for fold
+      x.train <- x[-fold,]
+      y.train <- y[-fold]
+      x.valid <- x[fold,]
+      y.valid <- y[fold]
+      # Get x Singular Value Decomposition
+      x.svd <- svd(x.train)
+      d <- x.svd$d
+      v <- x.svd$v
+      # Compute (D^2 - lambda*Id)^-1
+      d_inv <- diag(1/(d*d - lambda))
+      # Compute (X^TX + lambda*Id)^-1
+      xx_inv <- v %*% d_inv %*% t(v)
+      # Compute b_ridge
+      b <- xx_inv %*% t(x.train) %*% y.train
+      # Compute MSPE
+      mspe <- lambda*sum(b^2) + sum(y.valid - x.valid %*% b)
+      # Compute H such that y_ridge = H*y
+      h <- x.train %*% xx_inv %*% t(x.train)
+      # Compute df
+      df <- sum(diag(h))
+      # Add results to output
+      out.cv$mspe[j] <- mspe
+      out.cv$df[j] <- df
+    }
+    # Add mean of mspe/df to out data.frame
+    out$mspe[i] <- mean(out.cv$mspe)
+    out$df[i] <- mean(out.cv$df)
+    
+  }
+  
+  if(plot) {
+    df.plot <- data.frame(l=out$lambda,
+                          log=log(1+out$lambda) -1,
+                          df=out$df,
+                          mspe=out$mspe)
+    ggplot(df.plot) +
+      geom_line(aes(x=log, y=mspe), colour="red") +
+      geom_line(aes(x=df, y=mspe), colour="green")
+  }
+  
+  return(out)
+  
+}
+
+# We assume response variable is LSTAT
+x <- data %>% select(-LSTAT)
+y <- data %>% select(LSTAT)
+# Lambda test values
+lambda.v <- 10^(-3:2)
+# Function run
+(ridge_lambda_search_cv(x, y, cv = 10, lambda.v))
+```
+
+3. Prostate data application
+
+```{r, echo=FALSE}
+prostate <- read.table("prostate_data.txt", header=TRUE, row.names = 1)
+
+ridge_lambda_search_loocv_gcv <- function(
+  x, y, lambda.v,
+  plot=TRUE
+) {
+  
+  # Ensure x/y are matrix/vector
+  if(!is.matrix(x)) {
+    x <- as.matrix(x)
+  }
+  if(!is.vector(y)) {
+    y <- y[,,drop=TRUE]
+  }
+  
+  # Create data.frame to store output
+  if(!is.vector(lambda.v)) {
+    lambda.v <- lambda.v[,,drop=TRUE]
+  }
+  n <- length(lambda.v)
+  out <- data.frame(lambda=lambda.v, loocv=rep(0,n), gcv=rep(0,n), df=rep(0,n))
+  
+  # Get x Singular Value Decomposition
+  x.svd <- svd(x)
+  d <- x.svd$d
+  v <- x.svd$v
+
+  # Per lambda candidate compute coefficients, MSPE and df
+  for(i in 1:n) {
+    lambda <- lambda.v[i]
+    # Compute (D^2 - lambda*Id)^-1
+    d_inv <- diag(1/(d*d - lambda))
+    # Compute (X^TX + lambda*Id)^-1
+    xx_inv <- v %*% d_inv %*% t(v)
+    # Compute H such that y_ridge = H*y
+    h <- x %*% xx_inv %*% t(x)
+    # Comput y prediciton y.hat
+    y.hat <- h %*% y
+    # Compute df
+    df <- sum(diag(h))
+    # Add results to output
+    out$loocv[i] <- 1/nrow(x) * sum(((y - y.hat)/(1 - diag(h)))^2)
+    out$gcv[i] <- 1/nrow(x) * sum(((y - y.hat)/(1 - df/nrow(x)))^2)
+    out$df[i] <- df
+  }
+  
+  if(plot) {
+    df.plot <- data.frame(l=out$lambda,
+                          log=log(1+out$lambda) -1,
+                          df=out$df,
+                          loocv=out$loocv,
+                          gcv=out$gcv)
+    ggplot(df.plot) +
+      geom_line(aes(x=log, y=loocv), colour="red") +
+      geom_line(aes(x=df, y=loocv), colour="green")
+
+    ggplot(df.plot) +
+      geom_line(aes(x=log, y=gcv), colour="red") +
+      geom_line(aes(x=df, y=gcv), colour="green")
+  }
+  
+  return(out)
+  
+}
+```
+
+```{r, echo=FALSE}
+## With Validation data 
+cat("With validtion data of size 30 instances.")
+data <- prostate %>% select(-train)
+validation.ind <- prostate$train
+validation <- data[validation.ind,]
+training <- data[-validation.ind,]
+x <- training %>% select(-lpsa)
+y <- training %>% select(lpsa)
+x.valid <- validation %>% select(-lpsa)
+y.valid <- validation %>% select(lpsa)
+lambda.v <- 10^(-3:2)
+(out.valid <- ridge_lambda_search(x, y, x.valid, y.valid, lambda.v, plot = FALSE))
+
+## With CV 
+cat("With 5-fold and 10-fold Cross Validation respectively.")
+x <- data %>% select(-lpsa)
+y <- data %>% select(lpsa)
+lambda.v <- 10^(-3:2)
+(out.5.cv <- ridge_lambda_search_cv(x, y, cv = 10, lambda.v, plot = FALSE))
+(out.10.cv <- ridge_lambda_search_cv(x, y, cv = 10, lambda.v, plot = FALSE))
+
+## LOOCV and GCV estimates
+cat("With LOOCV (from n-CV and estimate)  and GCV estimate respectively.")
+(out.loocv <- ridge_lambda_search_cv(x, y, cv = nrow(x), lambda.v, plot = FALSE))
+(out.loocv2 <- ridge_lambda_search_loocv_gcv(x, y, lambda.v, plot = FALSE))
+```

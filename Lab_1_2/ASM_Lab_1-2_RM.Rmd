@@ -1,0 +1,92 @@
+---
+title: | 
+  | \LARGE ASM Homework 2
+subtitle: "Generalized Linear Model for JYB data"
+author: "Maria Gkotsopoulou & Ricard Monge Calvo & Amalia Vradi"
+date: "22/10/2019"
+geometry: margin=1.5cm
+output: 
+  pdf_document: 
+    latex_engine: xelatex
+fontsize: 11pt
+spacing: single
+subparagraph: yes
+header-includes: |
+  \usepackage{titlesec}
+  \usepackage{subfig}
+  \titlespacing{\section}{0pt}{10pt plus 1pt minus 1pt}{0pt plus 1pt minus 1pt}
+  \titlespacing{\subsection}{0pt}{10pt plus 1pt minus 1pt}{0pt plus 1pt minus 1pt}
+  \titlespacing{\subsubsection}{0pt}{10pt plus 1pt minus 1pt}{0pt plus 1pt minus 1pt}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+set.seed(42)
+```
+
+```{r, echo = FALSE, message=FALSE, warning=FALSE,results="hide"}
+
+############################################################
+###############  libraries  & Functions      ############### 
+############################################################
+
+### load packages ###
+requireorinstall=function(package=""){
+  reqpac=parse(text=paste("require(",as.character(package),")"))
+  if(eval(reqpac)){
+    print(paste(as.character(package), "has been loaded correctly"))
+  } else {
+    print(paste("trying to install" ,as.character(package)))
+    eval(parse(text=paste("try(install.packages(",as.character(package),"))")))
+    if(eval(reqpac)){
+      print(paste(as.character(package) ,"has been installed and loaded correctly"))
+    } else {
+      warning(paste("could not install",as.character(package)))
+    }
+  }
+}
+
+
+requireorinstall(c("knitr","kableExtra","ggplot2","ggsci","dplyr","tidyr","lmtest",
+                   "tidyverse","broom","purrr","magrittr","grid","gridExtra","scales",
+                   "GGally","fBasics", "car", "effects", "emmeans"))
+
+## theme definition for ggplot 
+ggstyle = theme(panel.grid.major = element_blank(),
+                panel.grid.minor = element_blank(),
+                panel.background = element_blank(),
+                axis.line = element_blank(),
+                axis.title.x = element_text(size = 10,
+                                            vjust=0.1),
+                axis.title.y = element_text(size = 10,
+                                            vjust=1.5),
+                axis.text.y = element_text(size=9),
+                axis.text.x = element_text(size=9,
+                                           angle = 45,
+                                           vjust = 1,
+                                           hjust=1),
+                plot.title = element_text(size=11),
+                legend.text = element_text( size=8),
+                legend.title = element_text( size=9))
+
+ggstyleFonts = theme(axis.title.x = element_text(size = 10,
+                                                 vjust=0.1),
+                     axis.title.y = element_text(size = 10,
+                                                 vjust=1.5),
+                     axis.text.y = element_text(size=9),
+                     axis.text.x = element_text(size=9,
+                                                angle = 45,
+                                                vjust = 1,
+                                                hjust=1),
+                     plot.title = element_text(size=11),
+                     legend.text = element_text( size=8),
+                     legend.title = element_text( size=9))
+
+```
+
+
+
+```{r}
+data <- read.table(file="JYB.csv", header = T, sep = ";", na.strings = "")
+summary(data)
+```
