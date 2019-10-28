@@ -80,6 +80,8 @@ validation <- data[validation.ind,]
 training <- data[-validation.ind,]
 ```
 
+# Choosing the penalization parameter $\lambda$
+
 1. Ridge regression lambda search
 
 ```{r, echo=FALSE}
@@ -349,4 +351,139 @@ lambda.v <- 10^(-3:2)
 cat("With LOOCV (from n-CV and estimate)  and GCV estimate respectively.")
 (out.loocv <- ridge_lambda_search_cv(x, y, cv = nrow(x), lambda.v, plot = FALSE))
 (out.loocv2 <- ridge_lambda_search_loocv_gcv(x, y, lambda.v, plot = FALSE))
+```
+
+# Ridge regression for the Boston Housing data
+
+```{r, echo = FALSE,fig.align="center",out.width = "300pt"}
+# not including TOWN, LON, LAT, CMEDV
+# since statement asks to fit the regression model where the response is MEDV 
+# and the explanatory variables are the remaining 13 variables in the previous list
+# removing CHAS since it is a factor and X matrix must be numeric
+boston <- boston.c %>% 
+            dplyr::select(TOWNNO, CRIM, ZN,INDUS, NOX, RM,AGE,DIS, RAD, TAX,
+                          PTRATIO,B,LSTAT,MEDV)
+
+validation.size <- round(nrow(boston)/3)
+validation.ind <- sample(nrow(boston), size = validation.size)
+validation <- boston[validation.ind,]
+training <- boston[-validation.ind,]
+
+
+Y <- scale( training$MEDV, center=TRUE, scale=FALSE)
+X <- scale( as.matrix(training[,-c(1,13)]), center=TRUE, scale=TRUE)
+n <- dim(X)[1]
+p <- dim(X)[2]
+
+XtX <- t(X)%*%X 
+d2 <- eigen(XtX,symmetric = TRUE, only.values = TRUE)$values
+
+lambda.max <- 1e5 ## no gold rule for choosing this 
+n.lambdas <- 25
+lambda.v <- exp(seq(0,log(lambda.max+1),length=n.lambdas))-1 ## evenly spaced in scale of logarithm
+
+
+#################################################################
+# estimated coefficients path
+#################################################################
+beta.path <- matrix(0,nrow=n.lambdas, ncol=p)
+diag.H.lambda <- matrix(0,nrow=n.lambdas, ncol=n)
+for (l in 1:n.lambdas){ 
+  lambda <- lambda.v[l]
+  H.lambda.aux <- t(solve(XtX + lambda*diag(1,p))) %*% t(X) #formula matrix H_lamda
+  beta.path[l,] <-  H.lambda.aux %*% Y
+  H.lambda <- X %*% H.lambda.aux 
+  diag.H.lambda[l,] <- diag(H.lambda)
+} 
+plot(c(-1,log(1+lambda.v[n.lambdas])), range(beta.path),type="n",
+     xlab="log(1+lambda)",ylab="coefficients")
+abline(h=0,lty=2)
+for(j in 1:p){
+  lines(log(1+lambda.v),beta.path[,j],col=4)
+  points(log(1+lambda.v),beta.path[,j],pch=19,cex=.7,col=4)
+}
+text(0*(1:p), beta.path[1,],names(training)[1:p],pos=2)
+```
+
+
+```{r, echo = FALSE,fig.align="center",out.width = "300pt"}
+#################################################################
+# effective degrees of freedom
+#################################################################
+df.v <- numeric(n.lambdas)
+for (l in 1:n.lambdas){
+  lambda <- lambda.v[l]
+  df.v[l] <- sum(d2/(d2+lambda)) 
+}
+
+#################################################################
+# choosing lambda by leave-one-out cross validation
+#################################################################
+PMSE.CV <- numeric(n.lambdas)
+for (l in 1:n.lambdas){
+  lambda <- lambda.v[l]
+  PMSE.CV[l] <- 0
+  for (i in 1:n){
+    #   m.Y.i <- mean(Y[-i])
+    m.Y.i <- 0
+    X.i <- X[-i,]; Y.i <- Y[-i]-m.Y.i
+    Xi <- X[i,]; Yi <- Y[i]
+    beta.i <- solve(t(X.i)%*%X.i + lambda*diag(1,p)) %*% t(X.i) %*% Y.i
+    hat.Yi <- Xi %*% beta.i + m.Y.i
+    PMSE.CV[l] <- PMSE.CV[l] + (hat.Yi-Yi)^2
+  }
+  PMSE.CV[l] <- PMSE.CV[l]/n
+}
+lambda.CV <- lambda.v[which.min(PMSE.CV)]
+df.CV <- df.v[which.min(PMSE.CV)]
+
+plot(log(1+lambda.v), PMSE.CV)
+abline(v=log(1+lambda.CV),col=2,lty=2)
+
+plot(df.v, PMSE.CV)
+abline(v=df.CV,col=2,lty=2)
+```
+
+
+```{r, echo = FALSE,fig.align="center",out.width = "300pt"}
+
+#################################################################
+#### computing PMSE.CV using the diagonal of H.lambda matrices 
+#################################################################
+PMSE.CV.H.lambda <- numeric(n.lambdas)
+for (l in 1:n.lambdas){
+  lambda <- lambda.v[l]
+  hat.Y <- X %*% beta.path[l,]
+  PMSE.CV.H.lambda[l] <- sum( ((Y-hat.Y)/(1-diag.H.lambda[l,]))^2 )/n
+}
+lambda.CV.H.lambda <- lambda.v[which.min(PMSE.CV.H.lambda)]
+df.CV.H.lambda <- df.v[which.min(PMSE.CV.H.lambda)]
+
+plot(df.v, PMSE.CV.H.lambda)
+points(df.v, PMSE.CV,col=3,pch=19,cex=.5)
+abline(v=df.CV.H.lambda,col=2,lty=2)
+
+```
+
+
+```{r, echo = FALSE,fig.align="center",out.width = "300pt"}
+#################################################################
+#### computing PMSE.GCV in ridge regression
+#################################################################
+PMSE.GCV <- numeric(n.lambdas)
+for (l in 1:n.lambdas){
+  lambda <- lambda.v[l]
+  hat.Y <- X %*% beta.path[l,]
+  nu <- sum(diag.H.lambda[l,])
+  PMSE.GCV[l] <- sum( ((Y-hat.Y)/(1-nu/n))^2 )/n
+}
+lambda.GCV <- lambda.v[which.min(PMSE.GCV)]
+df.GCV <- df.v[which.min(PMSE.GCV)]
+
+plot(df.v, PMSE.GCV)
+points(df.v, PMSE.CV,col=6,pch=19,cex=.75)
+abline(v=df.GCV,col=1,lty=2,lwd=3)
+abline(v=df.CV.H.lambda,col=6,lty=6)
+legend("top",c("PMSE.GCV","PMSE.CV","lambda.GCV","lambda.CV"),
+       pch=c(1,19,NA,NA),lty=c(0,0,2,6),lwd=c(0,0,3,1),col=c(1,6,1,6))
 ```
