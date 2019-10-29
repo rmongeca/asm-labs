@@ -1,0 +1,229 @@
+---
+title: | 
+  | \LARGE ASM Practice 
+subtitle: "Ridge Regression"
+author: "Maria Gkotsopoulou & Ricard Monge Calvo & Amalia Vradi"
+date: "27/10/2019"
+geometry: margin=1.5cm
+output: 
+  pdf_document: 
+    latex_engine: xelatex
+fontsize: 11pt
+spacing: single
+subparagraph: yes
+header-includes: |
+  \usepackage{titlesec}
+  \usepackage{subfig}
+  \titlespacing{\section}{0pt}{10pt plus 1pt minus 1pt}{0pt plus 1pt minus 1pt}
+  \titlespacing{\subsection}{0pt}{10pt plus 1pt minus 1pt}{0pt plus 1pt minus 1pt}
+  \titlespacing{\subsubsection}{0pt}{10pt plus 1pt minus 1pt}{0pt plus 1pt minus 1pt}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+set.seed(42)
+```
+
+```{r, echo = FALSE, message=FALSE, warning=FALSE, results="hide"}
+requireorinstall=function(package=""){
+  reqpac=parse(text=paste("require(",as.character(package),")"))
+  if(eval(reqpac)){
+    print(paste(as.character(package), "has been loaded correctly"))
+  } else {
+    print(paste("trying to install" ,as.character(package)))
+    eval(parse(text=paste("try(install.packages(",as.character(package),"))")))
+    if(eval(reqpac)){
+      print(paste(as.character(package) ,"has been installed and loaded correctly"))
+    } else {
+      warning(paste("could not install",as.character(package)))
+    }
+  }
+}
+requireorinstall(c("GGally","broom","car","caret","dplyr","ggplot2","ggsci","grid","gridExtra","kableExtra","knitr","lmtest","purrr","scales","tidyr","tidyverse"))
+## theme definition for ggplot 
+ggstyle = theme(panel.grid.major = element_blank(),
+                panel.grid.minor = element_blank(),
+                panel.background = element_blank(),
+                axis.line = element_blank(),
+                axis.title.x = element_text(size = 10,
+                                            vjust=0.1),
+                axis.title.y = element_text(size = 10,
+                                            vjust=1.5),
+                axis.text.y = element_text(size=9),
+                axis.text.x = element_text(size=9,
+                                           angle = 45,
+                                           vjust = 1,
+                                           hjust=1),
+                plot.title = element_text(size=11),
+                legend.text = element_text( size=8),
+                legend.title = element_text( size=9))
+ggstyleFonts = theme(axis.title.x = element_text(size = 10,
+                                                 vjust=0.1),
+                     axis.title.y = element_text(size = 10,
+                                                 vjust=1.5),
+                     axis.text.y = element_text(size=9),
+                     axis.text.x = element_text(size=9,
+                                                angle = 45,
+                                                vjust = 1,
+                                                hjust=1),
+                     plot.title = element_text(size=11),
+                     legend.text = element_text( size=8),
+                     legend.title = element_text( size=9))
+
+```
+
+# Choosing the penalization parameter $\lambda$
+
+
+# Ridge regression for the Boston Housing data
+
+We start by scaling and splitting the Boston dataset to training and test using a 2/3 ratio. 
+Since *CHAR* is a factor variable we do not include it in the *scale* function.
+First we need to tune the parameter $\lambda$. To do this we use 10 fold corss validation
+performed by *cv.glmnet*. 
+
+```{r, echo = FALSE, message=FALSE, warning=FALSE,fig.align="center",out.width = "300pt"}
+############################################################
+###############       DATA LOAD             ############### 
+############################################################
+
+load("boston.Rdata")
+# not including TOWNNO,TOWN, LON, LAT, CMEDV
+# since statement asks to fit the regression model where the response is MEDV 
+# and the explanatory variables are the remaining 13 variables in the previous list
+
+boston <- boston.c %>% 
+            dplyr::select(CHAS,CRIM, ZN,INDUS, NOX, RM,AGE,DIS, RAD, TAX,
+                          PTRATIO,B,LSTAT,MEDV)
+
+set.seed(234)
+
+trainIndex <- createDataPartition(boston$MEDV, 
+                                  p = 2/3, 
+                                  list = FALSE, 
+                                  times = 1)
+
+########### TRAIN /TEST SPLIT  ################
+# removing CHAS since it is a factor and X matrix must be numeric
+train <- data.frame(CHAS=boston[trainIndex,c(1)],
+                    scale(boston[trainIndex,-c(1)]))
+test <- data.frame(CHAS=boston[-trainIndex,c(1)],
+                    scale(boston[-trainIndex,-c(1)]))
+
+############## LINEAR REGRESSION (RIDGE)  ##############
+#Cross-Validation of the lambda parameter 
+y <- train$MEDV
+x <- train[,-dim(train)[2]] %>% data.matrix()
+
+lambda.max <- 1e5  
+n.lambdas <- 50
+lambdas <- exp(seq(10^-2,log(lambda.max+1),length=n.lambdas))-1 
+
+mod <- glmnet::glmnet(x, y, alpha = 0, lambda = lambdas)
+
+# specify alpha = 0 for ridge regression.
+model.ridge <- glmnet::cv.glmnet(x, y, alpha = 0, lambda = lambdas)
+#The lowest point in the curve indicates the optimal lambda: 
+#the log value of lambda that best minimised the error in cross-validation.
+lambda.ridge <- model.ridge$lambda.min
+
+############## PLOT ############## 
+library(plotmo)
+
+glmcoef<-coef(mod,lambda.ridge )
+coef.increase<-dimnames(glmcoef[glmcoef[,1]>0,0])[[1]]
+coef.decrease<-dimnames(glmcoef[glmcoef[,1]<0,0])[[1]]
+
+#get ordered list of variables as they appear at smallest lambda
+allnames<-names(coef(mod)[,
+            ncol(coef(mod))][order(coef(mod)[,
+            ncol(coef(mod))],decreasing=TRUE)])
+
+#remove intercept
+allnames<-setdiff(allnames,allnames[grep("Intercept",allnames)])
+
+#assign colors
+cols<-rep("gray",length(allnames))
+cols[allnames %in% coef.increase]<-"green"      # higher medv is good
+cols[allnames %in% coef.decrease]<-"red"        # lower medv is not
+
+plot_glmnet(mod,label=TRUE,s=lambda.ridge,col=cols)
+
+```
+
+To select the best model, we now use 10x10-CV using the lambda that best minimised 
+the error in cross-validation, which is `r lambda.ridge`.
+
+```{r, echo = FALSE, message=FALSE, warning=FALSE}
+
+# ridge REGRESSION CV-10
+## specify 10x10 CV
+K <- 10; TIMES <- 10
+trc <- trainControl (method="repeatedcv", number=K, repeats=TIMES)
+
+model.ridge.10x10CV <- caret::train(MEDV ~ ., 
+                                    data = train, 
+                                    trControl=trc, 
+                                    method='glmnet', 
+                                    tuneGrid=expand.grid(alpha=0, lambda=lambda.ridge))
+
+normalization.train <- (length(train$MEDV)-1)*var(train$MEDV)
+NMSE.ridge.train.error <- crossprod(predict (model.ridge.10x10CV) - train$MEDV) / normalization.train
+
+
+model.ridge.FINAL <- glmnet::glmnet(x, y, alpha = 0, lambda = lambda.ridge)
+
+## This is the test NMSE for ridge:
+normalization.test <- (length(test$MEDV)-1)*var(test$MEDV)
+sse_raw <- test$MEDV - model.ridge.FINAL$a0- data.matrix(test[,-dim(train)[2]]) %*% model.ridge.FINAL$beta 
+sse <- crossprod (as.matrix(sse_raw)) 
+
+NMSE.ridge.test.error <- sse/normalization.test
+```
+
+So our final model has *Df=* `r model.ridge.FINAL$df` which is the number of non-zero coefficients 
+and *%Dev=* `r model.ridge.FINAL$dev.ratio` is the percent deviance explained, which 
+is quite good.
+
+In terms of interpreting the coefficients, we observe that each additional room (*RM*) is associated
+with an increase in the house price, on average. This is quite straightforward, in principle,
+since it is to be expected that the larger the house, loosely speaking, the more expensive it 
+will be. In addition, we see that an increase in *RAD* (index of accessibility to radial highways)
+is associated with an increse in *MEDV*. So basically, if we were to think of the town 
+as a graph we would be capturing the connectivity degree of a specific suburb; so a remote
+node would have a lower value. Moreover, an increase in *CHAS* would mean that it will
+take the value of 1 is associate with an increase in *MEDV*, so ultimately if the
+Charles River passes through this suburb then this signals a higher  house price, on average.
+
+On the other hand, an increase in *LSTAT* (% lower status of the population) is associated 
+with a decrease in the house price, on average. Most interestinglty though is that the 
+increase in *PTRATIO* (pupil-teacher ratio by town) is associated with a decrease in the 
+house price, on average. So in other words, the education offering of a town increases its value. 
+Also, an increase in *DIS* (weighted distances to five Boston employment centres)
+is associated with a decrease in *MEDV*, on average. So, having to do a larger commute 
+to work signals a lower house price. Another reasonable result is the fact that 
+an increase in *NOX* (nitric oxides concentration) is associated with a decrease in *MEDV*,
+so air pollution is a detractor to house price.
+
+Furthermore, we see that neither *AGE* (proportion of owner-occupied units built prior to 1940) 
+nor *INDUS* (roportion of non-retail business acres per town) seem to have a considerable effect on *MEDV*. 
+
+Finally, we obtain the train and test error. 
+
+```{r,  echo = FALSE, message=FALSE, warning=FALSE,results='asis'}
+error.models <- tibble(regression_method = "ridge regression",
+                        train_error = as.numeric(NMSE.ridge.train.error),
+                        test_error = as.numeric(NMSE.ridge.test.error))
+
+
+
+error.models%>%
+  kable(format = "latex", booktabs = TRUE , digits = 3,
+        caption = "Model Errors Summary") %>% 
+  kable_styling(position = "center",latex_options = c("HOLD_position"),
+                font_size = 9)
+```
+
+The difference between train and test errors is not that large, even if the test 
+set is relatively small, and thus subject to a great variance.
+
