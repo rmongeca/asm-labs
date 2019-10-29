@@ -21,7 +21,6 @@ header-includes: |
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-set.seed(42)
 ```
 
 ```{r, echo = FALSE, message=FALSE, warning=FALSE,results="hide"}
@@ -49,7 +48,7 @@ requireorinstall=function(package=""){
 
 requireorinstall(c("knitr","kableExtra","ggplot2","ggsci","dplyr","tidyr","lmtest",
                    "tidyverse","broom","purrr","magrittr","grid","gridExtra","scales",
-                   "GGally","fBasics", "car", "effects", "emmeans"))
+                   "GGally","fBasics", "car", "effects", "emmeans", "viridis"))
 
 ## theme definition for ggplot 
 ggstyle = theme(panel.grid.major = element_blank(),
@@ -83,3 +82,99 @@ ggstyleFonts = theme(axis.title.x = element_text(size = 10,
                      legend.title = element_text( size=9))
 
 ```
+
+# Exploratory Data Analysis
+
+We check for any missing values or attributes without a value and find none nor NAs.
+
+```{r,warning=FALSE,echo = FALSE,results="asis"}
+jyb <- read.csv("JYB.csv", sep=";")
+
+dfNum <- jyb %>% dplyr::select_if(is.numeric) %>% dplyr::select(-id)
+
+t1<-data.frame(variable = names(dfNum),
+           class = sapply(dfNum, class),
+           min = sapply(dfNum, function(x) min(x)),
+           mean = sapply(dfNum, function(x) mean(x)),
+           median =  sapply(dfNum, function(x) median(x)),
+           max = sapply(dfNum, function(x) max(x)),
+           row.names = NULL)   %>%
+  kable(format = "latex", booktabs = TRUE,digits = 2) %>% 
+  kable_styling(position = "center",font_size = 9,
+                latex_options = c("HOLD_position"))
+
+t2<-jyb %>% 
+  dplyr::select_if(is.factor) %>% 
+  map(levels) %>% 
+  map(length) %>% 
+  unlist(recursive = FALSE) %>% 
+  enframe() %>% 
+  kable(format = "latex", booktabs = TRUE,
+       col.names =c("attribute", "# levels"))%>%
+  kable_styling(position = "center",font_size = 9,
+                latex_options = c("HOLD_position"))
+
+cat(c("\\begin{table}[!htb]
+    \\begin{minipage}{.5\\linewidth}
+      \\caption{Numerical variables}
+      \\centering",
+        t1,
+    "\\end{minipage}%
+    \\begin{minipage}{.5\\linewidth}
+      \\centering
+        \\caption{Categorical variables}",
+        t2,
+    "\\end{minipage} 
+\\end{table}"
+))
+```
+
+
+```{r,warning=FALSE,echo = FALSE,results="asis"}
+plyr::ldply(jyb %>% dplyr::select_if(is.factor) %>%
+              map(levels) , rbind) %>%
+  mutate_all(funs(fct_explicit_na(., na_level = ""))) %>%
+  kable(col.names= c("attribute",paste0(rep("level_",4),1:12)),
+        format = "latex", booktabs = TRUE)%>%
+  kable_styling(latex_options = "scale_down")
+```
+
+We are interested in predicting whether the customer subscribed to the deposit,
+so our target variable *y* is a binary one. 
+
+We now look closer into the relation between *y* and all the numerical 
+variables.
+```{r, echo = FALSE,fig.align="center",out.width = "300pt"}
+jyb %>% 
+  dplyr::select(c("y",colnames(jyb %>% 
+                                 dplyr::select_if(is.numeric) %>% 
+                                 dplyr::select(-id)))) %>%
+  gather(-y, key = "some_var_name", value = "some_value_name") %>%
+  ggplot(aes(x = some_value_name, fill = y)) +
+  geom_density( alpha = .2) +
+  scale_fill_viridis(name="y",option="plasma",  discrete = TRUE) +
+  facet_wrap(~ some_var_name, scales = "free")+
+  ggstyleFonts +
+  theme(panel.grid.major = element_blank(),
+        axis.title.x = element_blank(),
+        panel.background = element_rect(fill = '#ffffff'),
+        legend.position="bottom")
+
+```
+
+# Complete Model
+
+
+# Evaluation First Order Interactions
+
+
+# Automatic Variable Selection process
+
+
+# Model comparison
+
+
+# Model validation
+
+
+# Model interpretation
