@@ -322,8 +322,7 @@ y <- data %>% select(lpsa)
 
 ## LOOCV and GCV estimates
 cat("With LOOCV (from n-CV and estimate)  and GCV estimate respectively.")
-(out.loocv <- ridge_lambda_search_cv(x, y, cv = nrow(x), lambda.v, plot = FALSE))
-(out.loocv2 <- ridge_lambda_search_loocv_gcv(x, y, lambda.v, plot = FALSE))
+(out.loocv <- ridge_lambda_search_loocv_gcv(x, y, lambda.v, plot = FALSE))
 ```
 
 # Ridge regression for the Boston Housing data
