@@ -118,14 +118,16 @@ ridge_lambda_search <- function(
     d_inv <- diag(1/(d*d - lambda))
     # Compute (X^TX + lambda*Id)^-1
     xx_inv <- v %*% d_inv %*% t(v)
-    # Compute b_ridge
-    b <- xx_inv %*% t(x) %*% y
-    # Compute MSPE
-    mspe <- lambda*sum(b^2) + sum((y.valid - x.valid %*% b)^2)
     # Compute H such that y_ridge = H*y
-    h <- x %*% xx_inv %*% t(x)
+    h <- x.valid %*% xx_inv %*% t(x)
+    # Comput y prediciton y.hat
+    y.hat <- h %*% y
+    # Compute MSPE
+    mspe <- sum((y.valid - y.hat)^2) / length(y.valid)
+    # Compute Wsuch that y.train.hat = W*y.train
+    w <- x %*% xx_inv %*% t(x)
     # Compute df
-    df <- sum(diag(h))
+    df <- sum(diag(w))
     # Add results to output
     out$mspe[i] <- mspe
     out$df[i] <- df
@@ -192,14 +194,16 @@ ridge_lambda_search_cv <- function(
       d_inv <- diag(1/(d*d - lambda))
       # Compute (X^TX + lambda*Id)^-1
       xx_inv <- v %*% d_inv %*% t(v)
-      # Compute b_ridge
-      b <- xx_inv %*% t(x.train) %*% y.train
+      # Compute H such that y.valid.hat = H*y.train
+      h <- x.valid %*% xx_inv %*% t(x.train)
+      # Compute y prediciton y.hat
+      y.hat <- h %*% y.train
       # Compute MSPE
-      mspe <- lambda*sum(b^2) + sum((y.valid - x.valid %*% b)^2)
-      # Compute H such that y_ridge = H*y
-      h <- x.train %*% xx_inv %*% t(x.train)
+      mspe <- sum((y.valid - y.hat)^2) / length(y.valid)
+      # Compute Wsuch that y.train.hat = W*y.train
+      w <- x.train %*% xx_inv %*% t(x.train)
       # Compute df
-      df <- sum(diag(h))
+      df <- sum(diag(w))
       # Add results to output
       out.cv$mspe[j] <- mspe
       out.cv$df[j] <- df
@@ -323,6 +327,7 @@ y <- data %>% select(lpsa)
 ## LOOCV and GCV estimates
 cat("With LOOCV (from n-CV and estimate)  and GCV estimate respectively.")
 (out.loocv <- ridge_lambda_search_loocv_gcv(x, y, lambda.v, plot = FALSE))
+  (out.loocv2 <- ridge_lambda_search_cv(x, y, cv = nrow(x), lambda.v, plot = TRUE))
 ```
 
 # Ridge regression for the Boston Housing data
