@@ -1,0 +1,489 @@
+---
+title: | 
+  | \LARGE ASM Practice 
+subtitle: "Ridge Regression"
+author: "Maria Gkotsopoulou & Ricard Monge Calvo & Amalia Vradi"
+date: "27/10/2019"
+geometry: margin=1.5cm
+output: 
+  pdf_document: 
+    latex_engine: xelatex
+fontsize: 11pt
+spacing: single
+subparagraph: yes
+header-includes: |
+  \usepackage{titlesec}
+  \usepackage{subfig}
+  \titlespacing{\section}{0pt}{10pt plus 1pt minus 1pt}{0pt plus 1pt minus 1pt}
+  \titlespacing{\subsection}{0pt}{10pt plus 1pt minus 1pt}{0pt plus 1pt minus 1pt}
+  \titlespacing{\subsubsection}{0pt}{10pt plus 1pt minus 1pt}{0pt plus 1pt minus 1pt}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+set.seed(42)
+```
+
+```{r, echo = FALSE, message=FALSE, warning=FALSE, results="hide"}
+requireorinstall=function(package=""){
+  reqpac=parse(text=paste("require(",as.character(package),")"))
+  if(eval(reqpac)){
+    print(paste(as.character(package), "has been loaded correctly"))
+  } else {
+    print(paste("trying to install" ,as.character(package)))
+    eval(parse(text=paste("try(install.packages(",as.character(package),"))")))
+    if(eval(reqpac)){
+      print(paste(as.character(package) ,"has been installed and loaded correctly"))
+    } else {
+      warning(paste("could not install",as.character(package)))
+    }
+  }
+}
+requireorinstall(c("GGally","broom","car","caret","dplyr","ggplot2","ggsci","grid","gridExtra","kableExtra","knitr","lmtest","purrr","scales","tidyr","tidyverse"))
+```
+
+# Choosing the penalization parameter $\lambda$
+
+In order to choose the best penalization parameter, we provide three functions that given a candidate list of parameters return the Mean Square Predictive Error (MSPE), performance measure of their associated ridge regression models.
+
+## Ridge regression lambda search
+
+Our first function estimates the MSPE by computing the Mean Squared Error (MSE) of the actual target value $y$ against the predicted target value $\hat{y}$ for a given validation set. Additionally, we plot the values of these MSPE against the $\log{(1 + \lambda)}$  and the effective number of parameters $df$, or degrees of freedom.
+
+```{r, echo=FALSE}
+ridge_lambda_search <- function(
+  x, y,
+  x.valid,
+  y.valid,
+  lambda.v,
+  plot=TRUE
+) {
+  
+  # Ensure x/y are matrix/vector
+  if(!is.matrix(x)) {
+    x <- as.matrix(x)
+  }
+  if(!is.vector(y)) {
+    y <- y[,,drop=TRUE]
+  }
+  if(!is.matrix(x.valid)) {
+    x.valid <- as.matrix(x.valid)
+  }
+  if(!is.vector(y.valid)) {
+    y.valid <- y.valid[,,drop=TRUE]
+  }
+  
+  # Create data.frame to store output
+  if(!is.vector(lambda.v)) {
+    lambda.v <- lambda.v[,,drop=TRUE]
+  }
+  n <- length(lambda.v)
+  out <- data.frame(lambda=lambda.v, mspe=rep(0,n), df=rep(0,n))
+  
+  p <- ncol(x)
+
+  # Get x Singular Value Decomposition
+  x.svd <- svd(x)
+  d <- x.svd$d
+  v <- x.svd$v
+
+  # Per lambda candidate compute coefficients, MSPE and df
+  for(i in 1:n) {
+    lambda <- lambda.v[i]
+    # Compute (D^2 - lambda*Id)^-1
+    d_inv <- diag(1/(d*d - lambda))
+    # Compute (X^TX + lambda*Id)^-1
+    xx_inv <- t( solve( t(x) %*% x + lambda*diag(1,p) ))
+    # Compute beta
+    beta <- xx_inv %*% t(x) %*% y
+    # Compute y prediciton y.hat
+    y.hat <- x.valid %*% beta
+    # Compute MSPE
+    mspe <- sum((y.valid - y.hat)^2) / length(y.valid)
+    # Compute df depending on the singular values
+    df <- sum(d^2 / (d^2 +lambda))
+    # Add results to output
+    out$mspe[i] <- mspe
+    out$df[i] <- df
+  }
+  
+  if(plot) {
+    # Plot mspe-log(lamba+1)
+    plot(mspe~log(1+lambda), out, col=2)
+    lambda.min <- out$lambda[which.min(out$mspe)]
+    abline(v=log(1+lambda.min),col=2,lty=2)
+    # Plot mspe-df
+    plot(mspe~df, out, col=3)
+    df.min <- out$df[which.min(out$mspe)]
+    abline(v=df.min,col=3,lty=2)
+  }
+  
+  return(out)
+  
+}
+```
+
+## Ridge regression lambda search with CV
+
+Our second function performs a *k-fold* Cross Validation (CV) and averages the MSE of each fold to get the MSPE. As before, we plot the values of these MSPE against the $\log{(1 + \lambda)}$  and the effective number of parameters $df$, or degrees of freedom.
+
+```{r, echo=FALSE}
+ridge_lambda_search_cv <- function(
+  x, y, lambda.v,
+  cv=10,
+  plot=TRUE
+) {
+  
+  # Ensure x/y are matrix/vector
+  if(!is.matrix(x)) {
+    x <- as.matrix(x)
+  }
+  if(!is.vector(y)) {
+    y <- y[,,drop=TRUE]
+  }
+  
+  # Create data.frame to store output
+  if(!is.vector(lambda.v)) {
+    lambda.v <- lambda.v[,,drop=TRUE]
+  }
+  n <- length(lambda.v)
+  out <- data.frame(lambda=lambda.v, mspe=rep(0,n), df=rep(0,n))
+
+  p <- ncol(x)
+
+  # Per lambda candidate compute coefficients, MSPE and df
+  for(i in 1:n) {
+    lambda <- lambda.v[i]
+    # Create folds for CV
+    folds <- createFolds(1:nrow(x), k = cv)
+    # Create fold out data.frame
+    out.cv <- data.frame(mspe=rep(0,cv), df=rep(0,cv))
+    for(j in 1:cv) {
+      fold <- folds[[j]]
+      # Get training and validation data for fold
+      x.train <- x[-fold,]
+      y.train <- y[-fold]
+      x.valid <- x[fold,]
+      y.valid <- y[fold]
+      # Get x Singular Value Decomposition
+      x.svd <- svd(x.train)
+      d <- x.svd$d
+      v <- x.svd$v
+      # Compute (D^2 - lambda*Id)^-1
+      d_inv <- diag(1/(d*d - lambda))
+      # Compute (X^TX + lambda*Id)^-1
+      xx_inv <- t( solve( t(x.train) %*% x.train + lambda*diag(1,p) ))
+      # Compute beta 
+      beta <- xx_inv %*% t(x.train) %*% y.train
+      # Compute y prediciton y.hat
+      y.hat <- x.valid %*% beta
+      # Compute MSPE
+      mspe <- sum((y.valid - y.hat)^2) / length(y.valid)
+      # Compute df depending on the singular values
+      df <- sum(d^2 / (d^2 +lambda))
+      # Add results to output
+      out.cv$mspe[j] <- mspe
+      out.cv$df[j] <- df
+    }
+    # Add mean of mspe/df to out data.frame
+    out$mspe[i] <- mean(out.cv$mspe)
+    out$df[i] <- mean(out.cv$df)
+    
+  }
+  
+  if(plot) {
+    # Plot mspe-log(lamba+1)
+    plot(mspe~log(1+lambda), out, col=2)
+    lambda.min <- out$lambda[which.min(out$mspe)]
+    abline(v=log(1+lambda.min),col=2,lty=2)
+    # Plot mspe-df
+    plot(mspe~df, out, col=3)
+    df.min <- out$df[which.min(out$mspe)]
+    abline(v=df.min,col=3,lty=2)
+  }
+  
+  return(out)
+  
+}
+```
+
+## Prostate data application
+
+In addition to the previously mentioned functions, we provide a third one which computes the MSPE Leave One Out Cross Validation (LOOCV) and Generalized Cross Validation (GCV) estimates directly from the whole dataset.
+
+```{r, echo=FALSE}
+ridge_lambda_search_loocv_gcv <- function(
+  x, y, lambda.v,
+  plot=TRUE
+) {
+  
+  # Ensure x/y are matrix/vector
+  if(!is.matrix(x)) {
+    x <- as.matrix(x)
+  }
+  if(!is.vector(y)) {
+    y <- y[,,drop=TRUE]
+  }
+  
+  # Create data.frame to store output
+  if(!is.vector(lambda.v)) {
+    lambda.v <- lambda.v[,,drop=TRUE]
+  }
+  l <- length(lambda.v)
+  out <- data.frame(lambda=lambda.v, loocv=rep(0,l), gcv=rep(0,l),
+                    df=rep(0,l))
+  n <- nrow(x)
+  p <- ncol(x)
+  
+  # Get x Singular Value Decomposition
+  x.svd <- svd(x)
+  d <- x.svd$d
+  v <- x.svd$v
+  u <- x.svd$u
+  
+  # Per lambda candidate compute coefficients, MSPE and df
+  for(i in 1:l) {
+    lambda <- lambda.v[i]
+    # Compute (D^2 - lambda*Id)^-1
+    d_inv <- diag(1/(d^2 - lambda))
+    # Compute (X^TX + lambda*Id)^-1
+    xx_inv <- t( solve( t(x) %*% x + lambda*diag(1,p) ))
+    # Compute beta
+    beta <- (xx_inv %*% t(x)) %*% y
+    # Compute y prediciton y.hat
+    y.hat <- x %*% beta
+    # Compute df depending on the singular values
+    df <- sum(d^2 / (d^2 +lambda))
+    # Compute h such that y.hat = h * y
+    h <- x %*% xx_inv %*% t(x)
+    # Add results to output
+    out$loocv[i] <- sum( ( (y - y.hat)/(1 - diag(h)) )^2 ) / n
+    out$gcv[i] <- sum( ( (y - y.hat)/(1 - df/n) )^2 ) / n
+    out$df[i] <- df
+  }
+  
+  if(plot) {
+    # Plot loocv-log(lamba+1)
+    plot(loocv~log(1+lambda), out, col=2)
+    lambda.min <- out$lambda[which.min(out$loocv)]
+    abline(v=log(1+lambda.min),col=2,lty=2)
+    # Plot loocv-df
+    plot(loocv~df, out, col=3)
+    df.min <- out$df[which.min(out$loocv)]
+    abline(v=df.min,col=3,lty=2)
+
+    # Plot loocv-log(lamba+1)
+    plot(gcv~log(1+lambda), out, col=2)
+    lambda.min <- out$lambda[which.min(out$gcv)]
+    abline(v=log(1+lambda.min),col=2,lty=2)
+    # Plot loocv-df
+    plot(gcv~df, out, col=3)
+    df.min <- out$df[which.min(out$gcv)]
+    abline(v=df.min,col=3,lty=2)
+  }
+  
+  return(out)
+  
+}
+```
+
+To showcase these functions, we apply them to the *Prostate* dataset in the following three scenarios:
+
+* Using a validation set of 30 instances (delimitted by the *train* variable).
+* Using *5-fold* and *10-fold* Cross Validation.
+* Using LOOCV (both as n-fold CV and the estimate) and GCV
+
+### Validation set
+
+```{r, echo=FALSE, fig.align='center', out.width="300pt"}
+# Data load and pre-process
+prostate <- read.table("prostate_data.txt", header=TRUE, row.names = 1)
+data <- prostate %>%
+  dplyr::select(-train)
+
+# No gold rule for choosing this 
+lambda.max <- 1e5
+n.lambdas <- 25
+# Evenly spaced in scale of logarithm
+lambda.v <- exp(seq(0,log(lambda.max+1),length=n.lambdas))-1
+
+## With Validation data
+validation.ind <- prostate$train
+validation <- data[!validation.ind,]
+training <- data[validation.ind,]
+x <- training %>% select(-lpsa) %>% scale(center = T, scale = T)
+y <- training %>% select(lpsa) %>% scale(center = T, scale = F)
+x.valid <- validation %>% select(-lpsa) %>% scale(center = T, scale = T)
+y.valid <- validation %>% select(lpsa) %>% scale(center = T, scale = F)
+out.valid <- ridge_lambda_search(x, y, x.valid, y.valid, lambda.v,
+                                 plot = TRUE)
+```
+
+### 5-fold and 10-fold CV
+
+```{r, echo=FALSE, fig.align='center', out.width="300pt"}
+
+## With CV 
+x <- data %>% select(-lpsa) %>% scale(center = T, scale = T)
+y <- data %>% select(lpsa) %>% scale(center = T, scale = F)
+out.5.cv <- ridge_lambda_search_cv(x, y, cv = 10, lambda.v, plot = TRUE)
+out.10.cv <- ridge_lambda_search_cv(x, y, cv = 10, lambda.v, plot = TRUE)
+```
+
+### LOOCV (with n-fold CV) and GCV
+
+```{r, echo=FALSE, fig.align='center', out.width="300pt"}
+## LOOCV and GCV estimates
+out.loocv <- ridge_lambda_search_cv(x, y, cv = nrow(x), lambda.v, plot = TRUE)
+out.loocv.gcv <- ridge_lambda_search_loocv_gcv(x, y, lambda.v, plot = TRUE)
+```
+
+We observe that the results of MSPE seem more stable in the LOOCV and GCV compared to 5-fold and 10-fold CV, as one would expect given the small size of the dataset. Furthermore, the validation set results are also relatively stable, although with a different curve than for the LOOCV/GCV.
+
+# Ridge regression for the Boston Housing data
+
+We start by scaling and splitting the Boston dataset to training and test using a 2/3 ratio. 
+Since *CHAR* is a factor variable we do not include it in the *scale* function.
+First we need to tune the parameter $\lambda$. To do this we use 10 fold cross validation
+performed by *cv.glmnet*. 
+
+```{r, echo = FALSE, message=FALSE, warning=FALSE,fig.align="center",out.width = "300pt"}
+load("boston.Rdata")
+# not including TOWNNO,TOWN, LON, LAT, CMEDV
+# since statement asks to fit the regression model where the response is MEDV 
+# and the explanatory variables are the remaining 13 variables in the previous list
+
+boston <- boston.c %>% 
+            dplyr::select(CHAS,CRIM, ZN,INDUS, NOX, RM,AGE,DIS, RAD, TAX,
+                          PTRATIO,B,LSTAT,MEDV)
+
+set.seed(234)
+
+trainIndex <- createDataPartition(boston$MEDV, 
+                                  p = 2/3, 
+                                  list = FALSE, 
+                                  times = 1)
+
+########### TRAIN /TEST SPLIT  ################
+# removing CHAS since it is a factor and X matrix must be numeric
+train <- data.frame(CHAS=boston[trainIndex,c(1)],
+                    scale(boston[trainIndex,-c(1)]))
+test <- data.frame(CHAS=boston[-trainIndex,c(1)],
+                    scale(boston[-trainIndex,-c(1)]))
+
+############## LINEAR REGRESSION (RIDGE)  ##############
+#Cross-Validation of the lambda parameter 
+y <- train$MEDV
+x <- train[,-dim(train)[2]] %>% data.matrix()
+
+lambda.max <- 1e5  
+n.lambdas <- 50
+lambdas <- exp(seq(10^-2,log(lambda.max+1),length=n.lambdas))-1 
+
+mod <- glmnet::glmnet(x, y, alpha = 0, lambda = lambdas)
+
+# specify alpha = 0 for ridge regression.
+model.ridge <- glmnet::cv.glmnet(x, y, alpha = 0, lambda = lambdas)
+#the log value of lambda that best minimised the error in cross-validation.
+lambda.ridge <- model.ridge$lambda.min
+
+############## PLOT ############## 
+library(plotmo)
+
+glmcoef<-coef(mod,lambda.ridge )
+coef.increase<-dimnames(glmcoef[glmcoef[,1]>0,0])[[1]]
+coef.decrease<-dimnames(glmcoef[glmcoef[,1]<0,0])[[1]]
+
+#get ordered list of variables as they appear at smallest lambda
+allnames<-names(coef(mod)[,
+            ncol(coef(mod))][order(coef(mod)[,
+            ncol(coef(mod))],decreasing=TRUE)])
+
+#remove intercept
+allnames<-setdiff(allnames,allnames[grep("Intercept",allnames)])
+
+#assign colors
+cols<-rep("gray",length(allnames))
+cols[allnames %in% coef.increase]<-"green"      # higher medv is good
+cols[allnames %in% coef.decrease]<-"red"        # lower medv is not
+
+plot_glmnet(mod,label=TRUE,s=lambda.ridge,col=cols)
+
+```
+
+To select the best model, we now use 10x10-CV using the lambda that best minimised 
+the error in cross-validation, which is `r lambda.ridge`.
+
+```{r, echo = FALSE, message=FALSE, warning=FALSE}
+
+# ridge REGRESSION CV-10
+## specify 10x10 CV
+K <- 10; TIMES <- 10
+trc <- trainControl (method="repeatedcv", number=K, repeats=TIMES)
+
+model.ridge.10x10CV <- caret::train(MEDV ~ ., 
+                                    data = train, 
+                                    trControl=trc, 
+                                    method='glmnet', 
+                                    tuneGrid=expand.grid(alpha=0,
+                                                         lambda=lambda.ridge))
+
+normalization.train <- (length(train$MEDV)-1)*var(train$MEDV)
+NMSE.ridge.train.error <- crossprod(predict (model.ridge.10x10CV) - train$MEDV) / normalization.train
+
+model.ridge.FINAL <- glmnet::glmnet(x, y, alpha = 0, lambda = lambda.ridge)
+
+## This is the test NMSE for ridge:
+normalization.test <- (length(test$MEDV)-1)*var(test$MEDV)
+sse_raw <- test$MEDV - model.ridge.FINAL$a0- data.matrix(test[,-dim(train)[2]]) %*% model.ridge.FINAL$beta 
+sse <- crossprod (as.matrix(sse_raw)) 
+
+NMSE.ridge.test.error <- sse/normalization.test
+```
+
+So our final model has *Df=* `r model.ridge.FINAL$df` which is the number of non-zero coefficients 
+and *%Dev=* `r model.ridge.FINAL$dev.ratio` is the percent deviance explained, which 
+is quite good.
+
+In terms of interpreting the coefficients, we observe that each additional room (*RM*) is associated
+with an increase in the house price, on average. This is quite straightforward, in principle,
+since it is to be expected that the larger the house, loosely speaking, the more expensive it 
+will be. In addition, we see that an increase in *RAD* (index of accessibility to radial highways)
+is associated with an increse in *MEDV*. So basically, if we were to think of the town 
+as a graph we would be capturing the connectivity degree of a specific suburb; so a remote
+node would have a lower value. Moreover, an increase in *CHAS* would mean that it will
+take the value of 1 is associate with an increase in *MEDV*, so ultimately if the
+Charles River passes through this suburb then this signals a higher  house price, on average.
+
+On the other hand, an increase in *LSTAT* (% lower status of the population) is associated 
+with a decrease in the house price, on average. Most interestinglty though is that the 
+increase in *PTRATIO* (pupil-teacher ratio by town) is associated with a decrease in the 
+house price, on average. So in other words, the education offering of a town increases its value. 
+Also, an increase in *DIS* (weighted distances to five Boston employment centres)
+is associated with a decrease in *MEDV*, on average. So, having to do a larger commute 
+to work signals a lower house price. Another reasonable result is the fact that 
+an increase in *NOX* (nitric oxides concentration) is associated with a decrease in *MEDV*,
+so air pollution is a detractor to house price.
+
+Furthermore, we see that neither *AGE* (proportion of owner-occupied units built prior to 1940) 
+nor *INDUS* (roportion of non-retail business acres per town) seem to have a considerable effect on *MEDV*. 
+
+Finally, we obtain the train and test error. 
+
+```{r,  echo = FALSE, message=FALSE, warning=FALSE,results='asis'}
+error.models <- tibble(regression_method = "ridge regression",
+                        train_MSE = as.numeric(NMSE.ridge.train.error),
+                        test_MSE = as.numeric(NMSE.ridge.test.error))
+
+
+
+error.models%>%
+  kable(format = "latex", booktabs = TRUE , digits = 3,
+        caption = "Model Errors Summary") %>% 
+  kable_styling(position = "center",latex_options = c("HOLD_position"),
+                font_size = 9)
+```
+
+The difference between train and test errors is not that large, even if the test 
+set is relatively small, and thus subject to a great variance.
+
