@@ -1,29 +1,17 @@
----
-title: | 
-  | \LARGE ASM Homework 2
-subtitle: "Generalized Linear Model for JYB data"
-author: "Maria Gkotsopoulou & Ricard Monge Calvo & Amalia Vradi"
-date: "22/10/2019"
-geometry: margin=1.5cm
-output: 
-  pdf_document: 
-    latex_engine: xelatex
-fontsize: 11pt
-spacing: single
-subparagraph: yes
-header-includes: |
-  \usepackage{titlesec}
-  \usepackage{subfig}
-  \titlespacing{\section}{0pt}{10pt plus 1pt minus 1pt}{0pt plus 1pt minus 1pt}
-  \titlespacing{\subsection}{0pt}{10pt plus 1pt minus 1pt}{0pt plus 1pt minus 1pt}
-  \titlespacing{\subsubsection}{0pt}{10pt plus 1pt minus 1pt}{0pt plus 1pt minus 1pt}
----
-
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
-```
-
-```{r, echo = FALSE, message=FALSE, warning=FALSE,results="hide"}
+#--------------------Homework 1: Linear Models -----------------------------#
+#PROCEDURE....= 0. Load csv data                                            #
+#               1. Exploratory Data Analysis                                #
+#               2. Fit complete model                                       #
+#               3. Evaluation First Order Interactions                      # 
+#               4. Automatic Variable Selection process                     #
+#               5. Model comparison                                         #
+#               5. Validate model's assumptions                             # 
+#               6. Model interpretation                                     #
+#INPUT DATA...= JYB.csv                                                     #
+#R VERSION....= R version 3.5.1 (2018-07-02) Feather Spray                  # 
+#AUTHOR.......= Maria Gkotsopoulou                                          #
+#CREATED......= October 2019                                                #
+#---------------------------------------------------------------------------#
 
 ############################################################
 ###############  libraries  & Functions      ############### 
@@ -48,7 +36,7 @@ requireorinstall=function(package=""){
 
 requireorinstall(c("knitr","kableExtra","ggplot2","ggsci","dplyr","tidyr","lmtest",
                    "tidyverse","broom","purrr","magrittr","grid","gridExtra","scales",
-                   "GGally","fBasics", "car", "effects", "emmeans", "viridis", "ggmosaic"))
+                   "GGally","fBasics","viridis", "ggmosaic"))
 
 ## theme definition for ggplot 
 ggstyle = theme(panel.grid.major = element_blank(),
@@ -81,70 +69,52 @@ ggstyleFonts = theme(axis.title.x = element_text(size = 10,
                      legend.text = element_text( size=8),
                      legend.title = element_text( size=9))
 
-```
 
-# Exploratory Data Analysis
+############################################################
+###############       DATA LOAD             ############### 
+############################################################
 
-We check for any missing values or attributes without a value and find none nor NAs.
-
-```{r,warning=FALSE,echo = FALSE,results="asis"}
 jyb <- read.csv("JYB.csv", sep=";")
 
 dfNum <- jyb %>% dplyr::select_if(is.numeric) %>% dplyr::select(-id)
 
-t1<-data.frame(variable = names(dfNum),
+data.frame(variable = names(dfNum),
            class = sapply(dfNum, class),
            min = sapply(dfNum, function(x) min(x)),
            mean = sapply(dfNum, function(x) mean(x)),
            median =  sapply(dfNum, function(x) median(x)),
            max = sapply(dfNum, function(x) max(x)),
-           row.names = NULL)   %>%
-  kable(format = "latex", booktabs = TRUE,digits = 2) %>% 
-  kable_styling(position = "center",font_size = 9,
-                latex_options = c("HOLD_position"))
+           row.names = NULL) 
 
-t2<-jyb %>% 
+jyb %>% 
   dplyr::select_if(is.factor) %>% 
   map(levels) %>% 
   map(length) %>% 
   unlist(recursive = FALSE) %>% 
-  enframe() %>% 
-  kable(format = "latex", booktabs = TRUE,
-       col.names =c("attribute", "# levels"))%>%
-  kable_styling(position = "center",font_size = 9,
-                latex_options = c("HOLD_position"))
+  enframe() 
 
-cat(c("\\begin{table}[!htb]
-    \\begin{minipage}{.5\\linewidth}
-      \\caption{Numerical variables}
-      \\centering",
-        t1,
-    "\\end{minipage}%
-    \\begin{minipage}{.5\\linewidth}
-      \\centering
-        \\caption{Categorical variables}",
-        t2,
-    "\\end{minipage} 
-\\end{table}"
-))
-```
+plyr::ldply(jyb %>% dplyr::select_if(is.factor) %>% 
+              map(levels) , rbind) %>% 
+  mutate_all(funs(fct_explicit_na(., na_level = ""))) 
 
+############################################################
+###############  MISSINGS   ############### 
+############################################################
 
-```{r,warning=FALSE,echo = FALSE,results="asis"}
-plyr::ldply(jyb %>% dplyr::select_if(is.factor) %>%
-              map(levels) , rbind) %>%
-  mutate_all(funs(fct_explicit_na(., na_level = ""))) %>%
-  kable(col.names= c("attribute",paste0(rep("level_",4),1:12)),
-        format = "latex", booktabs = TRUE)%>%
-  kable_styling(latex_options = "scale_down")
-```
+missings <- sapply(jyb, function(x) is.na(x))
+col.missings <- apply(missings, 2, sum)
 
-We are interested in predicting whether the customer subscribed to the deposit,
-so our target variable *y* is a binary one. 
+col.missings %>% as.data.frame() 
 
-We now look closer into the relation between *y* and all the numerical 
-variables.
-```{r, echo = FALSE,fig.align="center",out.width = "400pt"}
+colSums(jyb =="") 
+
+rm(missings)
+# No missings nor attributes without a value
+
+############################################################
+################  Exploratory Data Analysis ############### 
+############################################################
+
 jyb %>% 
   dplyr::select(c("y",colnames(jyb %>% 
                                  dplyr::select_if(is.numeric) %>% 
@@ -160,9 +130,7 @@ jyb %>%
         panel.background = element_rect(fill = '#ffffff'),
         legend.position="bottom")
 
-```
 
-```{r, echo = FALSE,fig.align="center",out.width = "400pt"}
 jyb %>% 
   dplyr::select(c("y",colnames(jyb %>% 
                                  dplyr::select_if(is.numeric) %>% 
@@ -178,11 +146,7 @@ jyb %>%
         panel.background = element_rect(fill = '#ffffff'),
         legend.position="bottom")
 
-```
 
-Furthermore, we look into the relation between *y* and all the factor 
-variables.
-```{r, echo = FALSE,fig.align="center",out.width = "500pt"}
 mosaicYplusX <- function(factVar){
   ggplot(data = jyb) +
     geom_mosaic(aes_string(x = paste0("product(y,", factVar, ")"),
@@ -192,7 +156,7 @@ mosaicYplusX <- function(factVar){
     theme(panel.grid.major = element_blank(),
           panel.background = element_rect(fill = '#ffffff'),
           axis.text.y = element_text(size=7),
-          axis.text.x = element_text(size=5),
+          axis.text.x = element_text(size=7),
           axis.title.x=element_blank(),
           axis.title.y=element_blank(),
           legend.position="none")
@@ -208,42 +172,40 @@ for(i in 1:(length(factorNames))) {
 do.call(grid.arrange, p )
 
 rm(p)
-```
 
 
-```{r, echo = F,message=FALSE, warning=FALSE,results='asis'}
-catdesOutput <- FactoMineR::catdes(jyb,21)
+catdesOutput <- catdes(jyb,21)
 
-catdesOutput$test.chi2%>% 
-  kable(format = "latex", booktabs = TRUE,digits = 32,
-       caption = "description by categorical variables" ) %>% 
-  kable_styling(position = "center",
-                font_size = 9,
-                latex_options = c("HOLD_position"))
+catdesOutput$test.chi2
 
-catdesOutput$quanti.var%>% 
-  kable(format = "latex", booktabs = TRUE,digits = 32,
-       caption = "description by continuous variables" ) %>% 
-  kable_styling(position = "center",
-                font_size = 9,
-                latex_options = c("HOLD_position"))
+catdesOutput$quanti.var
+
+############################################################
+###############  Complete Model ############### 
+############################################################
 
 
-```
-
-# Complete Model
-
-
-# Evaluation First Order Interactions
+############################################################
+###############  Evaluation First Order Interactions #######
+############################################################
 
 
-# Automatic Variable Selection process
+############################################################
+###############  Automatic Variable Selection process ######
+############################################################
 
 
-# Model comparison
+############################################################
+###############  Model comparison             ##############
+############################################################
 
 
-# Model validation
+############################################################
+###############  Model validation             ##############
+############################################################
 
 
-# Model interpretation
+############################################################
+###############  Model interpretation         ##############
+############################################################
+
