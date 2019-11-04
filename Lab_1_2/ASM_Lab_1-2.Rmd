@@ -49,7 +49,7 @@ requireorinstall=function(package=""){
 requireorinstall(c("knitr","kableExtra","ggplot2","ggsci","dplyr","tidyr",
                    "lmtest","tidyverse","broom","purrr","magrittr","grid",
                    "gridExtra","scales","GGally","fBasics", "car", "effects",
-                   "emmeans", "viridis", "ggmosaic","woeBinning"))
+                   "emmeans", "viridis", "ggmosaic","woeBinning","fmsb"))
 
 ## theme definition for ggplot 
 ggstyleFonts = theme(axis.title.x = element_text(size = 10,
@@ -69,7 +69,7 @@ ggstyleFonts = theme(axis.title.x = element_text(size = 10,
 
 # Exploratory Data Analysis
 
-We check for any missing values or attributes without a value and find none nor NAs.
+We check for any missing values or attributes without a value and find none nor NAs. Next, we present a summary of the variables, basic statistics and levels:
 
 ```{r,warning=FALSE,echo = FALSE,results="asis"}
 jyb <- read.csv("JYB.csv", sep=";")
@@ -124,7 +124,12 @@ plyr::ldply(jyb %>% dplyr::select_if(is.factor) %>%
   kable_styling(latex_options = "scale_down")
 ```
 
-We are interested in predicting whether the customer subscribed to the deposit,
+Variable *pdays* has a value of 999 if the customer was not previously
+contacted. This makes the basic statistics of the variable meaningless. We
+could consider discretizing it.
+
+We are interested in predicting whether the customer subscribed to the
+deposit,
 so our target variable *y* is a binary one. 
 
 We now look closer into the relation between *y* and all the numerical 
@@ -147,7 +152,7 @@ jyb %>%
 
 ```
 
-```{r, echo = FALSE,fig.align="center",out.width = "400pt"}
+```{r, echo = FALSE, eval=FALSE, include=FALSE, fig.align="center",out.width = "400pt"}
 jyb %>% 
   dplyr::select(c("y",colnames(jyb %>% 
                                  dplyr::select_if(is.numeric)))) %>%
@@ -163,6 +168,12 @@ jyb %>%
         legend.position="bottom")
 
 ```
+
+
+In general, we see that for the *no* class we have higher and more skewed
+distribution of values, for instance for *cons.conf.idx*, *cons.price.idx*,
+*euribor3m* and *nr.employed*. We expect them to be relevant in predicting the
+response variable.
 
 Furthermore, we look into the relation between *y* and all the factor 
 variables.
@@ -195,11 +206,14 @@ do.call(grid.arrange, p )
 rm(p)
 ```
 
+From the mosaic plots we see the variables which are more differenciated in
+some levels are *job*, *default*, *contact*, *month* and *poutcome*. We expect
+them to be relevant in predicting the response variable.
 
 ```{r, echo = F,message=FALSE, warning=FALSE,results='asis'}
 catdesOutput <- FactoMineR::catdes(jyb,20)
 
-catdesOutput$test.chi2%>% 
+catdesOutput$test.chi2 %>%
   kable(format = "latex", booktabs = TRUE,digits = 32,
        caption = "description by categorical variables" ) %>% 
   kable_styling(position = "center",
@@ -216,18 +230,17 @@ catdesOutput$quanti.var%>%
 
 ```
 
-```{r}  
-# check correlations for the numeric
-jyb %>%
-  select_if(is.numeric) %>%
-  cor() %>%
-  corrplot::corrplot(method = "number", type = "upper", tl.cex = 0.8,
-                     tl.offset = 0.5, tl.srt = 45)
-```
+Based on the p-value, all variables seem signifcant. However, the most
+important ones seems to be *month* and *poutcome*, as categorical variables,
+and *pdays* and *previous* as numerical variables. As before, we expect them
+to be relevant in the following models.
 
 # Complete Model
 
-```{r, out.width="300pt"}
+We build a complete model with all the variables and compare it with the null
+model. 
+
+```{r}
 m.null <- glm(y~1, family = binomial(link = "logit"),
               data = jyb)
 m.full <- glm(y~., family = binomial(link = "logit"),
@@ -235,11 +248,9 @@ m.full <- glm(y~., family = binomial(link = "logit"),
 # Compare full and null model by anova test
 anova(m.null, m.full, test = "Chisq")
 # View model summary
-summary(m.full)
+glance(m.full)
 # See significance of factor variables
-car::Anova(m.full)
-# Plot model
-plot(m.full)
+anova(m.full, test = "Chisq")
 ```
 
 # Evaluation First Order Interactions
@@ -256,7 +267,7 @@ factors <- jyb %>% dplyr::select_if(is.factor) %>% colnames()
 formula.inter <- as.formula(
   paste0("y~.*(", paste0(factors[5], collapse = "+"),")"))
 m.inter <- glm(formula.inter, family = binomial(link = "logit"), data = jyb)
-summary(m.inter)
+glance(m.inter)
 # Comparison with full model
 anova(m.full, m.inter, test = "Chisq")
 # Significance of interaction terms
@@ -319,13 +330,8 @@ formula.inter <- as.formula("y ~ . - (job + housing + loan + nr.employed) +
 m.inter <- glm(formula.inter, family = binomial(link = "logit"), data = jyb)
 ```
 
-
-```{r}
-glance(m.inter)
-```
-
-With this complete model we get an AIC of 15998, better than the 16216 of the
-full model.
+With this complete model we get an AIC of `r m.inter$aic`, better than the 
+`r m.full$aic` of the full model.
 
 # Automatic Variable Selection process
 
@@ -350,7 +356,10 @@ anova(m.step.aic, m.step.bic, test = "Chisq")
 
 ```{r, echo = FALSE, message=FALSE, warning=FALSE,results='asis'}
 # Model comarison
-tibble(model = "stepwise_AIC",
+tibble(model = "Complete_interactions",
+       AIC =  m.inter$aic,
+       BIC = BIC(m.inter) ) %>%
+  add_row(model = "stepwise_AIC",
        AIC =  m.step.aic$aic,
        BIC = BIC(m.step.aic) ) %>%
   add_row(model = "stepwise_BIC",
@@ -363,7 +372,14 @@ tibble(model = "stepwise_AIC",
 
 ```
 
-We see the models are significantly different through the *Anova* test, but their used predictors are similar. In particular, all but one predictor (*emp.var.rate*) of the *BIC* selected model are included in the *AIC* model. This is due to the difference in criteria, penalizing more additional parameters with *BIC*. As expected, the *AIC* selected model has a better *AIC* measure while the *BIC* selected model has better *BIC* measure. In order to better interpret it, we choose the more succint model based on the parsimony criteria.
+We see the models are significantly different through the *Anova* test, but
+their used predictors are similar. In particular, all but one predictor
+(*emp.var.rate*) of the *BIC* selected model are included in the *AIC* model.
+This is due to the difference in criteria, penalizing more additional
+parameters with *BIC*. As expected, the *AIC* selected model has a better
+*AIC* measure while the *BIC* selected model has better *BIC* measure. In
+order to better interpret it, we choose the more succint model based on the
+parsimony criteria.
 
 ```{r, include=FALSE, echo=FALSE}
 m.final <- m.step.bic
@@ -383,19 +399,68 @@ par(op)
 From the *Normal Q-Q* plot we see that there is assymetry in the
 distribution and we can conclude that normality of the residuals is not met.
 
-We look at the *Residual vs Fitted* plot in more detail by plotting it for each
-predictor.
+Furthermore, from the *Scale-Location* plot, we seek to validate the
+assumption of homoskedasticity, which does not seem to hold in our case.
 
-```{r,fig.align="center",out.width = "350pt"}
-car::residualPlots(m1)
+Finally, from the *Residuals-Fitted* plot we see that the residuals seem to
+have some kind of tendency. This indicates that we should consider quadratic,
+or higher order, terms. However, this is out of the scope of this study.
+
+On the other hand, we can see the marginal residual plots to compare the mean values of the data and our model:
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE,fig.align="center",out.width = "350pt"}
+marginalModelPlots(m.final)
 ```
 
-Looking at both the figures, as well as, the curvature test, we conclude that a
-quadratic term is not needed for any of the variables.
-
-From the *Scale-Location* plot, we seek to validate the assumption of
-homoskedasticity, which does not seem to hold in our case.
-Consequently, we consider a log transformation to both *gross* and *budget*
-measures and see whether the obtained model better meets the assumptions.
+For each variable we see the data and model's mean values coincide very well.
 
 # Model interpretation
+
+For the model interpretation, we will use the *effect* plots, taking into
+account the interaction terms.
+As we are building a logistic regression model, we can not directly interpret
+the coefficients and response values, since they do not represent the response
+variable class but the value of the link function.
+
+```{r, warning=FALSE, message=FALSE, fig.align="center", out.width = "250pt"}
+m.effects <- effects::allEffects(m.final)
+plot(m.effects, "contact:cons.price.idx")
+```
+
+We observe the lines are not parallel, so we have different behaviour of the clients depending on the contact method. In general terms, the increase on the the consumer price index for a client gives higher probability of him/her subscribing to the deposit when being contacted by cellular instead of telephone.
+
+```{r, warning=FALSE, message=FALSE, fig.align="center", out.width = "250pt"}
+plot(m.effects, "euribor3m:contact")
+```
+
+In the same way as before the increase in the *Euribor* gives higher probability of subscribing for clients contacted by cellular than for clients contacted by phone. Nevertheless, the slope of the increase due to a change in *Euribor* is bigger in the case of telephone contact.
+
+To complete the interpretation of our numerical variables, we see the odds
+ratios increase per unit increase of each variable. We obtain the odds ratios
+by exponentiating the coefficients.
+
+```{r, warning=FALSE, message=FALSE}
+## odds ratios and 95% CI
+odds <- exp(cbind(OR = coef(m.final), confint(m.final)))
+```
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE, results='asis'}
+df.odds <- as.data.frame(odds) %>%
+  mutate(Var=rownames(.)) %>%
+  select(Var, OR, `2.5 %`, `97.5 %`) %>%
+  arrange(desc(OR))
+df.odds %>%
+  kable(format = "latex", booktabs = TRUE , digits = 3,
+        caption = "Odds ratio increase by model coefficient.") %>% 
+  kable_styling(position = "center",latex_options = c("HOLD_position"),
+                font_size = 9)
+```
+
+We see the highest factor of increase in odds ratio is given by the
+*cons.price.idx* variable. We interpret this as a higher probability of
+subscribing to the deposit the higher the consumer price index is. Contrary,
+the lowest factor of decrease in odds ratio is for the case of *emp.var.rate*.
+We interpret this as a lower probability of subscribing to the deposit the
+higher the employer variation rate is.
+
+
