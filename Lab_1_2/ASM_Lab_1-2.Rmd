@@ -52,23 +52,6 @@ requireorinstall(c("knitr","kableExtra","ggplot2","ggsci","dplyr","tidyr",
                    "emmeans", "viridis", "ggmosaic","woeBinning"))
 
 ## theme definition for ggplot 
-ggstyle = theme(panel.grid.major = element_blank(),
-                panel.grid.minor = element_blank(),
-                panel.background = element_blank(),
-                axis.line = element_blank(),
-                axis.title.x = element_text(size = 10,
-                                            vjust=0.1),
-                axis.title.y = element_text(size = 10,
-                                            vjust=1.5),
-                axis.text.y = element_text(size=9),
-                axis.text.x = element_text(size=9,
-                                           angle = 45,
-                                           vjust = 1,
-                                           hjust=1),
-                plot.title = element_text(size=11),
-                legend.text = element_text( size=8),
-                legend.title = element_text( size=9))
-
 ggstyleFonts = theme(axis.title.x = element_text(size = 10,
                                                  vjust=0.1),
                      axis.title.y = element_text(size = 10,
@@ -150,7 +133,7 @@ variables.
 ```{r, echo = FALSE,fig.align="center",out.width = "400pt"}
 jyb %>% 
   dplyr::select(c("y",colnames(jyb %>% 
-                                 dplyr::select_if(is.numeric) %>%
+                                 dplyr::select_if(is.numeric)))) %>%
   gather(-y, key = "some_var_name", value = "some_value_name") %>%
   ggplot(aes(x = some_value_name, fill = y)) +
   geom_density( alpha = .2) +
@@ -167,7 +150,7 @@ jyb %>%
 ```{r, echo = FALSE,fig.align="center",out.width = "400pt"}
 jyb %>% 
   dplyr::select(c("y",colnames(jyb %>% 
-                                 dplyr::select_if(is.numeric) %>%
+                                 dplyr::select_if(is.numeric)))) %>%
   gather(-y, key = "some_var_name", value = "some_value_name") %>%
   ggplot(aes(x = y, y = some_value_name ,fill = y)) +
   geom_boxplot(outlier.size=0.05) +
@@ -214,7 +197,7 @@ rm(p)
 
 
 ```{r, echo = F,message=FALSE, warning=FALSE,results='asis'}
-catdesOutput <- FactoMineR::catdes(jyb,21)
+catdesOutput <- FactoMineR::catdes(jyb,20)
 
 catdesOutput$test.chi2%>% 
   kable(format = "latex", booktabs = TRUE,digits = 32,
@@ -261,23 +244,158 @@ plot(m.full)
 
 # Evaluation First Order Interactions
 
-```{r}
+Considering that a model with all the variables and all the factor-factor and
+factor-covariable first order interactions would be too big to compute and 
+handle in a reasonable amount of time, we perform a model with the interactions
+with each factor separately. We regard as signficant the interactions which 
+give a p-value lower than 0.001 in the Anova Chi-squared test.
+
+```{r, eval=FALSE}
+# First order interactions with one factor housing
 factors <- jyb %>% dplyr::select_if(is.factor) %>% colnames()
 formula.inter <- as.formula(
-  paste0("y~.*(", paste0(factors[1], collapse = "+"),")"))
+  paste0("y~.*(", paste0(factors[5], collapse = "+"),")"))
 m.inter <- glm(formula.inter, family = binomial(link = "logit"), data = jyb)
 summary(m.inter)
+# Comparison with full model
 anova(m.full, m.inter, test = "Chisq")
-anova(m.inter)
+# Significance of interaction terms
+anova(m.inter, test = "Chisq")
 ```
+
+In the case of the *contact* variable interactions based on the p-value of the
+anova test comparison we can reject the $H_0$ so the models are different. The 
+AIC is 16150 while the AIC of the full model is 16216 so the new model is better.
+From the *ANOVA* output we see that the interactions *contact:month*, 
+*contact:cons.price.idx* and *contact:euribor3n* are significant.
+
+In the case of the *day_of_week* variable interactions based on the p-value of the
+anova test comparison we can reject the $H_0$ so the models are different. The 
+AIC is 16262 while the AIC of the full model is 16216 so the full model is
+slightly better. From the *ANOVA* output we see that the interaction 
+*day_of_week:month* is significant.
+
+In the case of the *default* variable interactions based on the p-value of the
+anova test comparison we can reject the $H_0$ so the models are different. The 
+AIC is 16241 while the AIC of the full model is 16216 so the full model is 
+better. From the *ANOVA* output we see that *default:euribor3m* is significant.
+
+In the case of the *education* variable interactions based on the p-value of 
+the anova test comparison we can't reject the $H_0$ so the models are the same.
+From the*ANOVA* output we see that *education:previous*, *education:poutcome* is
+significant.
+
+In the case of *housing* and *loan* variables interactions, based on the p-value
+of the anova test comparison we can't reject the $H_0$ so the models are the same.
+Furthermore, we do not get any significant interaction terms.
+
+In the case of the *marital* variable interactions based on the p-value of the
+anova test comparison we can't reject the $H_0$ so the models are the same. 
+From the *ANOVA* output we see that *marital:day_of_week* is significant.
+
+In the case of the *month* variable interactions, based on the p-value of the 
+anova test comparison we can reject the $H_0$ so the models are different. The 
+AIC is 16208 while the AIC of the full model is 16216 so the new model is 
+slightly better. From the *ANOVA* output we see that *month:emp.var.rate*,
+*month:cons.price.idx*, *month:euribor3n* is significant.
+
+In the case of *poutcome* variable interactions, based on the p-value of the 
+anova test comparison we can reject the $H_0$ so the models are different.
+However, we do not get any significant interaction terms.
+
+After reviewing the full model together with the obtained significant
+interaction terms, we can conclude that variables *job*, *housing*, *loan* and
+*nr.employed* can be removed. Next, we build our complete model with all the
+interaction terms.
+
+```{r}
+formula.inter <- as.formula("y ~ . - (job + housing + loan + nr.employed) +
+                            contact:month + contact:cons.price.idx +
+                            contact:euribor3m + day_of_week:month +
+                            default:euribor3m + education:previous +
+                            education:poutcome + marital:day_of_week +
+                            month:emp.var.rate + month:cons.price.idx +
+                            month:euribor3m")
+m.inter <- glm(formula.inter, family = binomial(link = "logit"), data = jyb)
+```
+
+
+```{r}
+glance(m.inter)
+```
+
+With this complete model we get an AIC of 15998, better than the 16216 of the
+full model.
 
 # Automatic Variable Selection process
 
+We use the stepwise procedure, by using the $AIC$ & $BIC$ criterion, to select
+our final model. Since our objective is the interpretability of the model we
+choose as starting point the null model, in contrast to starting 
+form the complete. We place as an upper bound the previous complete model with
+first order interaction terms.
 
-# Model comparison
+```{r}
+# Stepwise model selection with AIC
+m.step.aic <- step(m.null, scope=list(upper=m.inter), direction="both",
+                k=2, trace = 0)
+m.step.aic$formula
+# Stepwise model selection with BIC
+m.step.bic <- step(m.null, scope=list(upper=m.inter), direction="both",
+                k=log(nrow(jyb)), trace = 0)
+m.step.bic$formula
+# Anova test comaprison between models
+anova(m.step.aic, m.step.bic, test = "Chisq")
+```
 
+```{r, echo = FALSE, message=FALSE, warning=FALSE,results='asis'}
+# Model comarison
+tibble(model = "stepwise_AIC",
+       AIC =  m.step.aic$aic,
+       BIC = BIC(m.step.aic) ) %>%
+  add_row(model = "stepwise_BIC",
+       AIC = m.step.bic$aic,
+       BIC = BIC(m.step.bic)) %>%
+  kable(format = "latex", booktabs = TRUE , digits = 3,
+        caption = "Models Summary") %>% 
+  kable_styling(position = "center",latex_options = c("HOLD_position"),
+                font_size = 9)
+
+```
+
+We see the models are significantly different through the *Anova* test, but their used predictors are similar. In particular, all but one predictor (*emp.var.rate*) of the *BIC* selected model are included in the *AIC* model. This is due to the difference in criteria, penalizing more additional parameters with *BIC*. As expected, the *AIC* selected model has a better *AIC* measure while the *BIC* selected model has better *BIC* measure. In order to better interpret it, we choose the more succint model based on the parsimony criteria.
+
+```{r, include=FALSE, echo=FALSE}
+m.final <- m.step.bic
+```
 
 # Model validation
 
+After selecting our final model, we check the assumptions by looking at the
+following plots:
+
+```{r, warning=FALSE, echo=FALSE,fig.align="center",out.width = "350pt"}
+op<-par(mfrow=c(2,2))
+plot(m.final)
+par(op)
+```
+
+From the *Normal Q-Q* plot we see that there is assymetry in the
+distribution and we can conclude that normality of the residuals is not met.
+
+We look at the *Residual vs Fitted* plot in more detail by plotting it for each
+predictor.
+
+```{r,fig.align="center",out.width = "350pt"}
+car::residualPlots(m1)
+```
+
+Looking at both the figures, as well as, the curvature test, we conclude that a
+quadratic term is not needed for any of the variables.
+
+From the *Scale-Location* plot, we seek to validate the assumption of
+homoskedasticity, which does not seem to hold in our case.
+Consequently, we consider a log transformation to both *gross* and *budget*
+measures and see whether the obtained model better meets the assumptions.
 
 # Model interpretation
