@@ -46,9 +46,10 @@ requireorinstall=function(package=""){
 }
 
 
-requireorinstall(c("knitr","kableExtra","ggplot2","ggsci","dplyr","tidyr","lmtest",
-                   "tidyverse","broom","purrr","magrittr","grid","gridExtra","scales",
-                   "GGally","fBasics", "car", "effects", "emmeans", "viridis", "ggmosaic"))
+requireorinstall(c("knitr","kableExtra","ggplot2","ggsci","dplyr","tidyr",
+                   "lmtest","tidyverse","broom","purrr","magrittr","grid",
+                   "gridExtra","scales","GGally","fBasics", "car", "effects",
+                   "emmeans", "viridis", "ggmosaic","woeBinning"))
 
 ## theme definition for ggplot 
 ggstyle = theme(panel.grid.major = element_blank(),
@@ -144,6 +145,7 @@ so our target variable *y* is a binary one.
 
 We now look closer into the relation between *y* and all the numerical 
 variables.
+
 ```{r, echo = FALSE,fig.align="center",out.width = "400pt"}
 jyb %>% 
   dplyr::select(c("y",colnames(jyb %>% 
@@ -182,6 +184,7 @@ jyb %>%
 
 Furthermore, we look into the relation between *y* and all the factor 
 variables.
+
 ```{r, echo = FALSE,fig.align="center",out.width = "500pt"}
 mosaicYplusX <- function(factVar){
   ggplot(data = jyb) +
@@ -189,11 +192,11 @@ mosaicYplusX <- function(factVar){
                            fill="y"), na.rm=TRUE) + 
     scale_fill_viridis(name="y",option="plasma",  discrete = TRUE)+
     ggstyleFonts +
+    labs(x = factVar) +
     theme(panel.grid.major = element_blank(),
           panel.background = element_rect(fill = '#ffffff'),
           axis.text.y = element_text(size=7),
           axis.text.x = element_text(size=5),
-          axis.title.x=element_blank(),
           axis.title.y=element_blank(),
           legend.position="none")
 }
@@ -231,11 +234,44 @@ catdesOutput$quanti.var%>%
 
 ```
 
+```{r}  
+# check correlations for the numeric
+jyb %>%
+  select_if(is.numeric) %>%
+  dplyr::select(-id) %>%
+  cor() %>%
+  corrplot::corrplot(method = "number", type = "upper", tl.cex = 0.8,
+                     tl.offset = 0.5, tl.srt = 45)
+```
+
 # Complete Model
 
+```{r, out.width="300pt"}
+m.null <- glm(y~1, family = binomial(link = "logit"),
+              data = jyb %>% select(-id))
+m.full <- glm(y~., family = binomial(link = "logit"),
+              data = jyb %>% select(-id))
+# Compare full and null model by anova test
+anova(m.null, m.full, test = "Chisq")
+# View model summary
+summary(m.full)
+# See significance of factor variables
+car::Anova(m.full)
+# Plot model
+plot(m.full)
+```
 
 # Evaluation First Order Interactions
 
+```{r}
+factors <- jyb %>% dplyr::select_if(is.factor) %>% colnames()
+formula.inter <- as.formula(
+  paste0("y~.*(", paste0(factors[1], collapse = "+"),")"))
+m.inter <- glm(formula.inter, family = binomial(link = "logit"), data = jyb)
+summary(m.inter)
+anova(m.full, m.inter, test = "Chisq")
+anova(m.inter)
+```
 
 # Automatic Variable Selection process
 
