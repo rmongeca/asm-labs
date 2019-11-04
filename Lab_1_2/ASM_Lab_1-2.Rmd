@@ -90,8 +90,9 @@ We check for any missing values or attributes without a value and find none nor 
 
 ```{r,warning=FALSE,echo = FALSE,results="asis"}
 jyb <- read.csv("JYB.csv", sep=";")
+jyb <- jyb %>% dplyr::select(-id)
 
-dfNum <- jyb %>% dplyr::select_if(is.numeric) %>% dplyr::select(-id)
+dfNum <- jyb %>% dplyr::select_if(is.numeric)
 
 t1<-data.frame(variable = names(dfNum),
            class = sapply(dfNum, class),
@@ -149,8 +150,7 @@ variables.
 ```{r, echo = FALSE,fig.align="center",out.width = "400pt"}
 jyb %>% 
   dplyr::select(c("y",colnames(jyb %>% 
-                                 dplyr::select_if(is.numeric) %>% 
-                                 dplyr::select(-id)))) %>%
+                                 dplyr::select_if(is.numeric) %>%
   gather(-y, key = "some_var_name", value = "some_value_name") %>%
   ggplot(aes(x = some_value_name, fill = y)) +
   geom_density( alpha = .2) +
@@ -167,8 +167,7 @@ jyb %>%
 ```{r, echo = FALSE,fig.align="center",out.width = "400pt"}
 jyb %>% 
   dplyr::select(c("y",colnames(jyb %>% 
-                                 dplyr::select_if(is.numeric) %>% 
-                                 dplyr::select(-id)))) %>%
+                                 dplyr::select_if(is.numeric) %>%
   gather(-y, key = "some_var_name", value = "some_value_name") %>%
   ggplot(aes(x = y, y = some_value_name ,fill = y)) +
   geom_boxplot(outlier.size=0.05) +
@@ -238,7 +237,6 @@ catdesOutput$quanti.var%>%
 # check correlations for the numeric
 jyb %>%
   select_if(is.numeric) %>%
-  dplyr::select(-id) %>%
   cor() %>%
   corrplot::corrplot(method = "number", type = "upper", tl.cex = 0.8,
                      tl.offset = 0.5, tl.srt = 45)
@@ -248,9 +246,9 @@ jyb %>%
 
 ```{r, out.width="300pt"}
 m.null <- glm(y~1, family = binomial(link = "logit"),
-              data = jyb %>% select(-id))
+              data = jyb)
 m.full <- glm(y~., family = binomial(link = "logit"),
-              data = jyb %>% select(-id))
+              data = jyb)
 # Compare full and null model by anova test
 anova(m.null, m.full, test = "Chisq")
 # View model summary
