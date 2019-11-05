@@ -39,7 +39,7 @@ requireorinstall=function(package=""){
     }
   }
 }
-requireorinstall(c("sm","tidyverse","dplyr"))
+requireorinstall(c("sm","tidyverse","dplyr","KernSmooth"))
 ```
 The aim of this project is to compute the conditional variance $\sigma^2 (x)$ 
 of the variable $lgWeight=log(Weight)$ of the *aircraft* dataset (in *sm*
@@ -104,8 +104,8 @@ eps2 <- eps*eps
 Z <- log(eps2)
 ```
 
-Now we have the residual values $\cap{\epsilon}_i = y_i - \cap{m}(x_i)$ and 
-their logarithm $z_i = \log{\cap{\epsilon}^2_i }$. We need to build a new model 
+Now we have the residual values $\hat{\epsilon}_i = y_i - \hat{m}(x_i)$ and 
+their logarithm $z_i = \log{\hat{\epsilon}^2_i }$. We need to build a new model 
 for $z_i$ against $x_i$. We choose the new badnwith and build the model:
 
 ```{r, fig.align='center', out.width="300pt"}
@@ -124,8 +124,8 @@ text(x=h.min,y=h.result[which.min(h.result$cv),"cv"], labels
 q.result <- locpolreg(x=Yr,y=Z,h=h.min,q=1,type.kernel=kernel.type)
 ```
 
-Finally, the conditional variance $\cap{\sigma}^2(x) =\exp{\cap{q}(x)}$ where 
-$\cap{q}(x)$ is the estimate of the previous model.
+Finally, the conditional variance $\hat{\sigma}^2(x) =\exp{\hat{q}(x)}$ where 
+$\hat{q}(x)$ is the estimate of the previous model.
 
 ```{r}
 sigma2 <- exp(q.result$mtgr)
@@ -133,8 +133,8 @@ sigma <- sqrt(sigma2)
 ```
 
 To sum up the results, we plot the value of $\epsilon_i^2$ against $x_i$ 
-superimposing the values of $\cap{\sigma}^2(x)$, and also the values of 
-$\cap{m}(x)$ with the bands $\cap{m}(x) \pm 1.96\cap{\sigma}(x)$.
+superimposing the values of $\hat{\sigma}^2(x)$, and also the values of 
+$\hat{m}(x)$ with the bands $\hat{m}(x) \pm 1.96\hat{\sigma}(x)$.
 
 ```{r, fig.align='center', out.width="300pt"}
 plot(Yr, eps2, cex=0.8)
@@ -150,7 +150,7 @@ points(Yr,m.result$mtgr-1.96*sigma, type="l", col="blue", lty=2)
 We use the function *dpill* in the *KernSmooth* package in order to compute the
 *Plug-in* bandwith parameter. Afterwards, we use this badnwith with the
 *sm.regression* function in the *sm* package to compute the local linear 
-regression models, both $\cap{m}(x)$ and $\cap{q}(x)$.
+regression models, both $\hat{m}(x)$ and $\hat{q}(x)$.
 Regarding the Kernel choice, we decide to use the *normal* kernel.
 
 ```{r, fig.align='center', out.width="300pt"}
@@ -161,49 +161,43 @@ After choosing the bandwith, we build the local linear regression model using
 the *locpolreg* function and compute the residual values.
 
 ```{r, fig.align='center', out.width="300pt"}
-m.result <- sm.regression(x=Yr,y=lgWeight,h=h.min)
+m.result <- sm.regression(x=Yr,y=lgWeight,h=h.min,
+                          eval.grid=FALSE, eval.points=Yr)
+X <- m.result$eval.points # == Yr
 eps <- lgWeight - m.result$estimate
 eps2 <- eps*eps
 Z <- log(eps2)
 ```
 
-Now we have the residual values $\cap{\epsilon}_i = y_i - \cap{m}(x_i)$ and 
-their logarithm $z_i = \log{\cap{\epsilon}^2_i }$. We need to build a new model 
+Now we have the residual values $\hat{\epsilon}_i = y_i - \hat{m}(x_i)$ and 
+their logarithm $z_i = \log{\hat{\epsilon}^2_i }$. We need to build a new model 
 for $z_i$ against $x_i$. We choose the new badnwith and build the model:
 
 ```{r, fig.align='center', out.width="300pt"}
-h.v <- exp(seq(log(diff(range(Yr))/100), log(diff(range(Yr))/4),l=20))
-# Get LOOCV and GCV estimates
-h.result <- h.cv.gcv(x=Yr, y=Z, h.v=h.v, q=1, type.kernel=kernel.type) %>% 
-  as.data.frame() %>% arrange(h.v)
-plot(cv~h.v, h.result, type="b")
-h.min <- h.result[which.min(h.result$cv),"h.v"]
-abline(v=h.min, col=2)
-text(x=h.min,y=h.result[which.min(h.result$cv),"cv"], labels
-     =round(h.min,digits=2), pos = 3, col = 2)
+h.min <- dpill(x=X, y=Z)
+q.result <- sm.regression(x=X,y=Z,h=h.min,
+                          eval.grid=FALSE, eval.points=X)
 ```
 
-```{r, fig.align='center', out.width="300pt"}
-q.result <- locpolreg(x=Yr,y=Z,h=h.min,q=1,type.kernel=kernel.type)
-```
-
-Finally, the conditional variance $\cap{\sigma}^2(x) =\exp{\cap{q}(x)}$ where 
-$\cap{q}(x)$ is the estimate of the previous model.
+Finally, the conditional variance $\hat{\sigma}^2(x) =\exp{\hat{q}(x)}$ where 
+$\hat{q}(x)$ is the estimate of the previous model.
 
 ```{r}
-sigma2 <- exp(q.result$mtgr)
+sigma2 <- exp(q.result$estimate)
 sigma <- sqrt(sigma2)
 ```
 
 To sum up the results, we plot the value of $\epsilon_i^2$ against $x_i$ 
-superimposing the values of $\cap{\sigma}^2(x)$, and also the values of 
-$\cap{m}(x)$ with the bands $\cap{m}(x) \pm 1.96\cap{\sigma}(x)$.
+superimposing the values of $\hat{\sigma}^2(x)$, and also the values of 
+$\hat{m}(x)$ with the bands $\hat{m}(x) \pm 1.96\hat{\sigma}(x)$.
 
 ```{r, fig.align='center', out.width="300pt"}
-plot(Yr, eps2, cex=0.8)
-points(Yr, sigma2, type="l", col="red", lwd=2)
+plot(X, eps2, cex=0.8)
+points(X, sigma2, type="l", col="red", lwd=2)
 
-plot(Yr,m.result$mtgr)
-points(Yr,m.result$mtgr+1.96*sigma, type="l", col="blue", lty=2)
-points(Yr,m.result$mtgr-1.96*sigma, type="l", col="blue", lty=2)
+plot(m.result$eval.points, m.result$estimate)
+points(m.result$eval.points, m.result$estimate+1.96*sigma,
+       type="l", col="blue", lty=2)
+points(m.result$eval.points, m.result$estimate-1.96*sigma,
+       type="l", col="blue", lty=2)
 ```
