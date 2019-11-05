@@ -1,0 +1,209 @@
+---
+title: | 
+  | \LARGE ASM Practice 
+subtitle: "Local Linear Regression"
+author: "Maria Gkotsopoulou & Ricard Monge Calvo & Amalia Vradi"
+date: "07/11/2019"
+geometry: margin=1.5cm
+output: 
+  pdf_document: 
+    latex_engine: xelatex
+fontsize: 11pt
+spacing: single
+subparagraph: yes
+header-includes: |
+  \usepackage{titlesec}
+  \usepackage{subfig}
+  \titlespacing{\section}{0pt}{10pt plus 1pt minus 1pt}{0pt plus 1pt minus 1pt}
+  \titlespacing{\subsection}{0pt}{10pt plus 1pt minus 1pt}{0pt plus 1pt minus 1pt}
+  \titlespacing{\subsubsection}{0pt}{10pt plus 1pt minus 1pt}{0pt plus 1pt minus 1pt}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+set.seed(42)
+```
+
+```{r, echo = FALSE, message=FALSE, warning=FALSE, results="hide"}
+requireorinstall=function(package=""){
+  reqpac=parse(text=paste("require(",as.character(package),")"))
+  if(eval(reqpac)){
+    print(paste(as.character(package), "has been loaded correctly"))
+  } else {
+    print(paste("trying to install" ,as.character(package)))
+    eval(parse(text=paste("try(install.packages(",as.character(package),"))")))
+    if(eval(reqpac)){
+      print(paste(as.character(package) ,"has been installed and loaded correctly"))
+    } else {
+      warning(paste("could not install",as.character(package)))
+    }
+  }
+}
+requireorinstall(c("sm","tidyverse","dplyr"))
+```
+The aim of this project is to compute the conditional variance $\sigma^2 (x)$ 
+of the variable $lgWeight=log(Weight)$ of the *aircraft* dataset (in *sm*
+package) given the year, *Yr*, variable.
+
+```{r}
+# Load data and pre-process
+data("aircraft")
+attach(aircraft)
+lgPower <- log(Power)
+lgSpan <- log(Span)
+lgLength <- log(Length)
+lgWeight <- log(Weight)
+lgSpeed <- log(Speed)
+lgRange <- log(Range)
+```
+
+## Estimation using *locpolreg* function
+
+We load our local function *locpolreg* along with the *bandwith_selection* 
+script which contains different functions for bandwith selection.
+We will choose the bandwith hyper-parameter by LOOCV. We use the appropiate 
+function in the *bandiwth_selection* script to get the LOOCV and GCV estimates
+(which uses the *locpolreg* function).
+Regarding the Kernel choice, we decide to use the *normal* kernel.
+
+```{r}
+# Load local functions
+source("locpolreg.R")
+source("bandwith_selection.R")
+```
+
+In first place, we have to compute the local linear regression for the predicted
+variable *lgWeight* depending on *Yr*. We choose the badnwith as the one that
+minimizes the LOOCV estimate:
+
+```{r, fig.align='center', out.width="300pt"}
+# Choice between "normal"  (Gaussian, default), 
+# "epan"    (Epanechnikov) or 
+# "rs.epan" (re-scaled Epanechnikov)
+# "unif"    (Uniform Kernel in [-1,1])
+kernel.type <- "normal"
+# Define Bandwith candidates
+h.v <- exp(seq(log(diff(range(Yr))/100), log(diff(range(Yr))/4),l=20))
+# Get LOOCV and GCV estimates
+h.result <- h.cv.gcv(x=Yr, y=lgWeight, h.v=h.v, q=1, type.kernel=kernel.type) %>% 
+  as.data.frame() %>% arrange(h.v)
+plot(cv~h.v, h.result, type="b")
+h.min <- h.result[which.min(h.result$cv),"h.v"]
+abline(v=h.min, col=2)
+text(x=h.min,y=h.result[which.min(h.result$cv),"cv"], labels
+     =round(h.min,digits=2), pos = 3, col = 2)
+```
+
+After choosing the bandwith, we build the local linear regression model using
+the *locpolreg* function and compute the residual values.
+
+```{r, fig.align='center', out.width="300pt"}
+m.result <- locpolreg(x=Yr,y=lgWeight,h=h.min,q=1,type.kernel=kernel.type)
+eps <- lgWeight - m.result$mtgr
+eps2 <- eps*eps
+Z <- log(eps2)
+```
+
+Now we have the residual values $\cap{\epsilon}_i = y_i - \cap{m}(x_i)$ and 
+their logarithm $z_i = \log{\cap{\epsilon}^2_i }$. We need to build a new model 
+for $z_i$ against $x_i$. We choose the new badnwith and build the model:
+
+```{r, fig.align='center', out.width="300pt"}
+h.v <- exp(seq(log(diff(range(Yr))/100), log(diff(range(Yr))/4),l=20))
+# Get LOOCV and GCV estimates
+h.result <- h.cv.gcv(x=Yr, y=Z, h.v=h.v, q=1, type.kernel=kernel.type) %>% 
+  as.data.frame() %>% arrange(h.v)
+plot(cv~h.v, h.result, type="b")
+h.min <- h.result[which.min(h.result$cv),"h.v"]
+abline(v=h.min, col=2)
+text(x=h.min,y=h.result[which.min(h.result$cv),"cv"], labels
+     =round(h.min,digits=2), pos = 3, col = 2)
+```
+
+```{r, fig.align='center', out.width="300pt"}
+q.result <- locpolreg(x=Yr,y=Z,h=h.min,q=1,type.kernel=kernel.type)
+```
+
+Finally, the conditional variance $\cap{\sigma}^2(x) =\exp{\cap{q}(x)}$ where 
+$\cap{q}(x)$ is the estimate of the previous model.
+
+```{r}
+sigma2 <- exp(q.result$mtgr)
+sigma <- sqrt(sigma2)
+```
+
+To sum up the results, we plot the value of $\epsilon_i^2$ against $x_i$ 
+superimposing the values of $\cap{\sigma}^2(x)$, and also the values of 
+$\cap{m}(x)$ with the bands $\cap{m}(x) \pm 1.96\cap{\sigma}(x)$.
+
+```{r, fig.align='center', out.width="300pt"}
+plot(Yr, eps2, cex=0.8)
+points(Yr, sigma2, type="l", col="red", lwd=2)
+
+plot(Yr,m.result$mtgr)
+points(Yr,m.result$mtgr+1.96*sigma, type="l", col="blue", lty=2)
+points(Yr,m.result$mtgr-1.96*sigma, type="l", col="blue", lty=2)
+```
+
+## Estimation using *sm.regression* function
+
+We use the function *dpill* in the *KernSmooth* package in order to compute the
+*Plug-in* bandwith parameter. Afterwards, we use this badnwith with the
+*sm.regression* function in the *sm* package to compute the local linear 
+regression models, both $\cap{m}(x)$ and $\cap{q}(x)$.
+Regarding the Kernel choice, we decide to use the *normal* kernel.
+
+```{r, fig.align='center', out.width="300pt"}
+h.min <- dpill(x=Yr, y=lgWeight)
+```
+
+After choosing the bandwith, we build the local linear regression model using
+the *locpolreg* function and compute the residual values.
+
+```{r, fig.align='center', out.width="300pt"}
+m.result <- sm.regression(x=Yr,y=lgWeight,h=h.min)
+eps <- lgWeight - m.result$estimate
+eps2 <- eps*eps
+Z <- log(eps2)
+```
+
+Now we have the residual values $\cap{\epsilon}_i = y_i - \cap{m}(x_i)$ and 
+their logarithm $z_i = \log{\cap{\epsilon}^2_i }$. We need to build a new model 
+for $z_i$ against $x_i$. We choose the new badnwith and build the model:
+
+```{r, fig.align='center', out.width="300pt"}
+h.v <- exp(seq(log(diff(range(Yr))/100), log(diff(range(Yr))/4),l=20))
+# Get LOOCV and GCV estimates
+h.result <- h.cv.gcv(x=Yr, y=Z, h.v=h.v, q=1, type.kernel=kernel.type) %>% 
+  as.data.frame() %>% arrange(h.v)
+plot(cv~h.v, h.result, type="b")
+h.min <- h.result[which.min(h.result$cv),"h.v"]
+abline(v=h.min, col=2)
+text(x=h.min,y=h.result[which.min(h.result$cv),"cv"], labels
+     =round(h.min,digits=2), pos = 3, col = 2)
+```
+
+```{r, fig.align='center', out.width="300pt"}
+q.result <- locpolreg(x=Yr,y=Z,h=h.min,q=1,type.kernel=kernel.type)
+```
+
+Finally, the conditional variance $\cap{\sigma}^2(x) =\exp{\cap{q}(x)}$ where 
+$\cap{q}(x)$ is the estimate of the previous model.
+
+```{r}
+sigma2 <- exp(q.result$mtgr)
+sigma <- sqrt(sigma2)
+```
+
+To sum up the results, we plot the value of $\epsilon_i^2$ against $x_i$ 
+superimposing the values of $\cap{\sigma}^2(x)$, and also the values of 
+$\cap{m}(x)$ with the bands $\cap{m}(x) \pm 1.96\cap{\sigma}(x)$.
+
+```{r, fig.align='center', out.width="300pt"}
+plot(Yr, eps2, cex=0.8)
+points(Yr, sigma2, type="l", col="red", lwd=2)
+
+plot(Yr,m.result$mtgr)
+points(Yr,m.result$mtgr+1.96*sigma, type="l", col="blue", lty=2)
+points(Yr,m.result$mtgr-1.96*sigma, type="l", col="blue", lty=2)
+```
