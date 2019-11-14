@@ -3,7 +3,7 @@ title: |
   | \LARGE ASM Practice 
 subtitle: "Local Linear Regression"
 author: "Maria Gkotsopoulou & Ricard Monge Calvo & Amalia Vradi"
-date: "07/11/2019"
+date: "20/11/2019"
 geometry: margin=1.5cm
 output: 
   pdf_document: 
@@ -60,8 +60,8 @@ lgRange <- log(Range)
 ## Estimation using *locpolreg* function
 
 We load our local function *locpolreg* along with the *bandwith_selection* 
-script which contains different functions for bandwith selection.
-We will choose the bandwith hyper-parameter by LOOCV. We use the appropiate 
+script which contains different functions for bandwidth selection.
+We will choose the bandwidth hyper-parameter by LOOCV. We use the appropriate 
 function in the *bandiwth_selection* script to get the LOOCV and GCV estimates
 (which uses the *locpolreg* function).
 Regarding the Kernel choice, we decide to use the *normal* kernel.
@@ -72,8 +72,8 @@ source("locpolreg.R")
 source("bandwith_selection.R")
 ```
 
-In first place, we have to compute the local linear regression for the predicted
-variable *lgWeight* depending on *Yr*. We choose the badnwith as the one that
+The first thing we need to do is to compute the local linear regression for the predicted
+variable *lgWeight* depending on *Yr*. We choose the bandwidth as the one that
 minimizes the LOOCV estimate:
 
 ```{r, fig.align='center', out.width="300pt"}
@@ -94,7 +94,7 @@ text(x=h.min,y=h.result[which.min(h.result$cv),"cv"], labels
      =round(h.min,digits=2), pos = 3, col = 2)
 ```
 
-After choosing the bandwith, we build the local linear regression model using
+After choosing the bandwidth, we build the local linear regression model using
 the *locpolreg* function and compute the residual values.
 
 ```{r, fig.align='center', out.width="300pt"}
@@ -104,9 +104,9 @@ eps2 <- eps*eps
 Z <- log(eps2)
 ```
 
-Now we have the residual values $\hat{\epsilon}_i = y_i - \hat{m}(x_i)$ and 
+Having obtained the residual values $\hat{\epsilon}_i = y_i - \hat{m}(x_i)$ we compute
 their logarithm $z_i = \log{\hat{\epsilon}^2_i }$. We need to build a new model 
-for $z_i$ against $x_i$. We choose the new badnwith and build the model:
+for $z_i$ against $x_i$. We choose the new bandwidth and build the model:
 
 ```{r, fig.align='center', out.width="300pt"}
 h.v <- exp(seq(log(diff(range(Yr))/100), log(diff(range(Yr))/4),l=20))
@@ -148,7 +148,7 @@ points(Yr,m.result$mtgr-1.96*sigma, type="l", col="blue", lty=2)
 ## Estimation using *sm.regression* function
 
 We use the function *dpill* in the *KernSmooth* package in order to compute the
-*Plug-in* bandwith parameter. Afterwards, we use this badnwith with the
+*Plug-in* bandwidth parameter. Afterwards, we use this bandwidth with the
 *sm.regression* function in the *sm* package to compute the local linear 
 regression models, both $\hat{m}(x)$ and $\hat{q}(x)$.
 Regarding the Kernel choice, we decide to use the *normal* kernel.
@@ -157,8 +157,8 @@ Regarding the Kernel choice, we decide to use the *normal* kernel.
 h.min <- dpill(x=Yr, y=lgWeight)
 ```
 
-After choosing the bandwith, we build the local linear regression model using
-the *locpolreg* function and compute the residual values.
+After choosing the bandwidth, we build the local linear regression model using
+the *sm.regression* function and compute the residual values.
 
 ```{r, fig.align='center', out.width="300pt"}
 m.result <- sm.regression(x=Yr,y=lgWeight,h=h.min,
@@ -171,7 +171,7 @@ Z <- log(eps2)
 
 Now we have the residual values $\hat{\epsilon}_i = y_i - \hat{m}(x_i)$ and 
 their logarithm $z_i = \log{\hat{\epsilon}^2_i }$. We need to build a new model 
-for $z_i$ against $x_i$. We choose the new badnwith and build the model:
+for $z_i$ against $x_i$. We choose the new bandwidth and build the model:
 
 ```{r, fig.align='center', out.width="300pt"}
 h.min <- dpill(x=X, y=Z)
