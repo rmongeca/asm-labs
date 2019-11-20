@@ -1,0 +1,412 @@
+---
+title: | 
+  | \LARGE ASM Practice 
+subtitle: "Lasso estimation"
+author: "Maria Gkotsopoulou & Ricard Monge Calvo & Amalia Vradi"
+date: "20/11/2019"
+geometry: margin=1.5cm
+output: 
+  pdf_document: 
+    latex_engine: xelatex
+fontsize: 11pt
+spacing: single
+subparagraph: yes
+header-includes: |
+  \usepackage{titlesec}
+  \usepackage{subfig}
+  \titlespacing{\section}{0pt}{10pt plus 1pt minus 1pt}{0pt plus 1pt minus 1pt}
+  \titlespacing{\subsection}{0pt}{10pt plus 1pt minus 1pt}{0pt plus 1pt minus 1pt}
+  \titlespacing{\subsubsection}{0pt}{10pt plus 1pt minus 1pt}{0pt plus 1pt minus 1pt}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+set.seed(42)
+```
+
+```{r, echo = FALSE, message=FALSE, warning=FALSE, results="hide"}
+requireorinstall=function(package=""){
+  reqpac=parse(text=paste("require(",as.character(package),")"))
+  if(eval(reqpac)){
+    print(paste(as.character(package), "has been loaded correctly"))
+  } else {
+    print(paste("trying to install" ,as.character(package)))
+    eval(parse(text=paste("try(install.packages(",as.character(package),"))")))
+    if(eval(reqpac)){
+      print(paste(as.character(package) ,"has been installed and loaded correctly"))
+    } else {
+      warning(paste("could not install",as.character(package)))
+    }
+  }
+}
+requireorinstall(c("GGally","broom","car","caret","dplyr","ggplot2","ggsci","grid","gridExtra","kableExtra","knitr","lmtest","purrr","scales","tidyr","tidyverse","tibble"))
+```
+
+# Lasso Estimation for the Boston Housing data
+
+We start by scaling and splitting the Boston dataset to training and test using a 2/3 ratio. 
+Since *CHAR* is a factor variable we do not include it in the *scale* function.
+First we need to tune the parameter $\lambda$. To do this we use 10 fold cross validation
+performed by *cv.glmnet*. 
+
+```{r, echo = FALSE, message=FALSE, warning=FALSE,fig.align="center",out.width = "300pt"}
+load("boston.Rdata")
+# not including TOWNNO,TOWN, LON, LAT, CMEDV
+# since statement asks to fit the regression model where the response is CMEDV 
+# and the explanatory variables are the remaining 13 variables in the previous list
+
+boston <- boston.c %>% 
+            dplyr::select(CHAS,CRIM, ZN,INDUS, NOX, RM,AGE,DIS, RAD, TAX,
+                          PTRATIO,B,LSTAT,CMEDV)
+
+set.seed(234)
+
+trainIndex <- createDataPartition(boston$CMEDV, 
+                                  p = 2/3, 
+                                  list = FALSE, 
+                                  times = 1)
+
+########### TRAIN /TEST SPLIT  ################
+# removing CHAS since it is a factor and X matrix must be numeric
+train <- data.frame(CHAS=boston[trainIndex,c(1)],
+                    scale(boston[trainIndex,-c(1)]))
+test <- data.frame(CHAS=boston[-trainIndex,c(1)],
+                    scale(boston[-trainIndex,-c(1)]))
+
+############## LINEAR REGRESSION (RIDGE)  ##############
+#Cross-Validation of the lambda parameter 
+y <- train$CMEDV
+x <- train[,-dim(train)[2]] %>% data.matrix()
+
+lambda.max <- 1e5  
+n.lambdas <- 50
+lambdas <- exp(seq(10^-2,log(lambda.max+1),length=n.lambdas))-1 
+
+mod <- glmnet::glmnet(x, y, alpha = 1, lambda = lambdas)
+
+# specify alpha = 0 for ridge regression.
+model.lasso <- glmnet::cv.glmnet(x, y, alpha = 1, lambda = lambdas,
+                                 nfolds = 10)
+#the log value of lambda that best minimised the error in cross-validation.
+lambda.lasso <- model.lasso$lambda.min
+
+# Plot MSE against log(lambda)
+plot(model.lasso)
+abline(v=log(model.lasso$lambda.min),col=2,lty=2)
+abline(v=log(model.lasso$lambda.1se),col=2,lty=2)
+```
+
+```{r, echo = FALSE, message=FALSE, warning=FALSE,fig.align="center",out.width = "300pt"}
+
+# Plot on coefficients when tuning lambda
+library(plotmo)
+
+glmcoef<-coef(mod,lambda.lasso )
+coef.increase<-dimnames(glmcoef[glmcoef[,1]>0,0])[[1]]
+coef.decrease<-dimnames(glmcoef[glmcoef[,1]<0,0])[[1]]
+
+#get ordered list of variables as they appear at smallest lambda
+allnames<-names(coef(mod)[,
+            ncol(coef(mod))][order(coef(mod)[,
+            ncol(coef(mod))],decreasing=TRUE)])
+
+#remove intercept
+allnames<-setdiff(allnames,allnames[grep("Intercept",allnames)])
+
+#assign colors
+cols<-rep("gray",length(allnames))
+cols[allnames %in% coef.increase]<-"green"      # higher CMEDV is good
+cols[allnames %in% coef.decrease]<-"red"        # lower CMEDV is not
+
+plot_glmnet(mod,label=TRUE,s=lambda.lasso,col=cols)
+
+```
+
+To select the best model, we now use 10-CV using the lambda that best minimised 
+the error in cross-validation, which is `r lambda.lasso`.
+
+```{r, echo = FALSE, message=FALSE, warning=FALSE}
+
+# Lasso Estimation CV-10
+K <- 10
+trc <- trainControl (method="cv", number=K)
+
+model.lasso.10CV <- caret::train(CMEDV ~ ., 
+                                    data = train, 
+                                    trControl=trc, 
+                                    method='glmnet', 
+                                    tuneGrid=expand.grid(alpha=1,
+                                                         lambda=lambda.lasso))
+
+normalization.train <- (length(train$CMEDV)-1)*var(train$CMEDV)
+NMSE.lasso.train.error <- crossprod(predict (model.lasso.10CV) - train$CMEDV) / normalization.train
+
+model.lasso.FINAL <- glmnet::glmnet(x, y, alpha = 1, lambda = lambda.lasso)
+
+## This is the test NMSE for lasso:
+normalization.test <- (length(test$CMEDV)-1)*var(test$CMEDV)
+sse_raw <- test$CMEDV - model.lasso.FINAL$a0- data.matrix(test[,-dim(train)[2]]) %*% model.lasso.FINAL$beta 
+sse <- crossprod (as.matrix(sse_raw)) 
+
+NMSE.lasso.test.error <- sse/normalization.test
+```
+
+So our final model has *Df=* `r model.lasso.FINAL$df` which is the number of non-zero coefficients 
+and *%Dev=* `r model.lasso.FINAL$dev.ratio` is the percent deviance explained, which 
+is quite good.
+
+In terms of interpreting the coefficients, we observe that each additional room (*RM*) is associated
+with an increase in the house price, on average. This is quite straightforward, in principle,
+since it is to be expected that the larger the house, loosely speaking, the more expensive it 
+will be. 
+
+Moreover, an increase in *CHAS* would mean that it will take the value of 1 is
+associate with an increase in *CMEDV*, so ultimately if the
+Charles River passes through this suburb then this signals a higher  house price, on average.
+
+On the other hand, an increase in *LSTAT* (% lower status of the population) is associated 
+with a decrease in the house price, on average.
+
+Most interestingly though is that the 
+increase in *PTRATIO* (pupil-teacher ratio by town) is associated with a decrease in the 
+house price, on average. So in other words, the education offering of a town increases its value.
+Also, an increase in *DIS* (weighted distances to five Boston employment centres)
+is associated with a decrease in *CMEDV*, on average. So, having to do a larger commute 
+to work signals a lower house price.
+
+Another reasonable result is the fact that 
+an increase in *NOX* (nitric oxides concentration) is associated with a decrease in *CMEDV*,
+so air pollution is a detractor to house price.
+
+Furthermore, we see that *AGE* (proportion of owner-occupied units built prior to 1940) does not seem to have any effect on *CMEDV*, since the coefficient is 0. This was to be expected due to the sparsity of the method. 
+
+Finally, we obtain the train and test error. 
+
+```{r,  echo = FALSE, message=FALSE, warning=FALSE,results='asis'}
+error.models <- tibble(regression_method = "lasso estimation",
+                        train_MSE = as.numeric(NMSE.lasso.train.error),
+                        test_MSE = as.numeric(NMSE.lasso.test.error))
+
+
+
+error.models%>%
+  kable(format = "latex", booktabs = TRUE , digits = 6,
+        caption = "Model Errors Summary") %>% 
+  kable_styling(position = "center",latex_options = c("HOLD_position"),
+                font_size = 9)
+```
+
+The difference between train and test errors is not that large, even if the test 
+set is relatively small, and thus subject to a great variance.
+
+# Ridge regression comparison
+
+We want to compare the ridge regression models for the same dataset using both the function in the *glmnet* package and our *custom* function. In both cases, we will use 10-fold CV to tune the *lambda* penalization parameter on the training set, build the final model and analyze its performance on the test set.
+
+The following table shows the MSPE measures of both methods and for both training and test data:
+
+```{r, echo=FALSE}
+ridge_lambda_search_cv <- function(
+  x, y, lambda.v,
+  cv=10,
+  plot=TRUE
+) {
+  # Ensure x/y are matrix/vector
+  if(!is.matrix(x)) {
+    x <- as.matrix(x)
+  }
+  if(!is.vector(y)) {
+    y <- y[,,drop=TRUE]
+  }
+  
+  # Create data.frame to store output
+  if(!is.vector(lambda.v)) {
+    lambda.v <- lambda.v[,,drop=TRUE]
+  }
+  n <- length(lambda.v)
+  out <- data.frame(lambda=lambda.v, mspe=rep(0,n), df=rep(0,n))
+
+  p <- ncol(x)
+
+  # Create folds for CV
+  ## a typical choice is cv=10
+  folds <- sample(rep(1:cv, length=nrow(x)), nrow(x), replace=FALSE) 
+
+  # Per lambda candidate compute coefficients, MSPE and df
+  for(i in 1:n) {
+    lambda <- lambda.v[i]
+    
+    # Create fold out data.frame
+    out.cv <- data.frame(mspe=rep(0,cv), df=rep(0,cv))
+    for(j in 1:cv) {
+      # Get training and validation data for fold
+      x.train <- x[folds!=j,]
+      y.train <- y[folds!=j]
+      x.valid <- x[folds==j,]
+      y.valid <- y[folds==j]
+      # Get x Singular Value Decomposition
+      x.svd <- svd(x.train)
+      d <- x.svd$d
+      v <- x.svd$v
+      # Compute (D^2 - lambda*Id)^-1
+      d_inv <- diag(1/(d*d - lambda))
+      # Compute (X^TX + lambda*Id)^-1
+      xx_inv <- t( solve( t(x.train) %*% x.train + lambda*diag(1,p) ))
+      # Compute beta 
+      beta <- xx_inv %*% t(x.train) %*% y.train
+      # Compute y prediciton y.hat
+      y.hat <- x.valid %*% beta
+      # Compute MSPE
+      mspe <- sum((y.valid - y.hat)^2) / length(y.valid)
+      # Compute df depending on the singular values
+      df <- sum(d^2 / (d^2 +lambda))
+      # Add results to output
+      out.cv$mspe[j] <- mspe
+      out.cv$df[j] <- df
+    }
+    # Add mean of mspe/df to out data.frame
+    out$mspe[i] <- mean(out.cv$mspe)
+    out$df[i] <- mean(out.cv$df)
+    
+  }
+  
+  if(plot) {
+    # Plot mspe-log(lamba+1)
+    plot(mspe~log(1+lambda), out, col=2)
+    lambda.min <- out$lambda[which.min(out$mspe)]
+    abline(v=log(1+lambda.min),col=2,lty=2)
+    # Plot mspe-df
+    plot(mspe~df, out, col=3)
+    df.min <- out$df[which.min(out$mspe)]
+    abline(v=df.min,col=3,lty=2)
+  }
+  
+  return(out)
+  
+}
+```
+
+```{r, echo=FALSE}
+ridge_regression <- function(
+  x.train,
+  y.train,
+  x.test,
+  y.test,
+  lambda
+) {
+  # Ensure x/y are matrix/vector
+  if(!is.matrix(x)) {
+    x <- as.matrix(x)
+  }
+  if(!is.vector(y)) {
+    y <- y[,,drop=TRUE]
+  }
+
+  p <- ncol(x)  
+  # 1-row df to store performance measures
+  performance <- data.frame(lambda=lambda, mspe=0, train_mspe=0, df=0)
+
+  # Get x Singular Value Decomposition
+  x.svd <- svd(x.train)
+  d <- x.svd$d
+  v <- x.svd$v
+  # Compute (D^2 - lambda*Id)^-1
+  d_inv <- diag(1/(d*d - lambda))
+  # Compute (X^TX + lambda*Id)^-1
+  xx_inv <- t( solve( t(x.train) %*% x.train + lambda*diag(1,p) ))
+  # Compute beta 
+  beta <- xx_inv %*% t(x.train) %*% y.train
+  # Compute y prediciton y.hat
+  y.hat <- x.test %*% beta
+  # Compute MSPE
+  mspe <- sum((y.test - y.hat)^2) / length(y.test)
+  # Compute df depending on the singular values
+  df <- sum(d^2 / (d^2 +lambda))
+  # Compute y train prediciton y.hat
+  y.hat.train <- x.train %*% beta
+  # Compute MSPE
+  train_mspe <- sum((y.train - y.hat.train)^2) / length(y.train)
+  # Add results to output
+  performance$mspe[1] <- mspe
+  performance$train_mspe[1] <- train_mspe
+  performance$df[1] <- df
+
+  output <- list()
+  output$performance <- performance
+  output$coefficients <- beta
+  return(output)
+  
+}
+```
+
+```{r, echo = FALSE}
+set.seed(42)
+# Get tuned lambda
+out.cv <- ridge_lambda_search_cv(x, y, cv = 10, lambdas, plot = F)
+lambda.ridge <- out.cv[which.min(out.cv$mspe),"lambda"]
+
+# Get test
+y.test <- test$CMEDV
+x.test <- test[,-dim(test)[2]] %>% data.matrix()
+
+out.ridge <- ridge_regression(x, y, x.test, y.test, lambda.ridge)
+```
+
+```{r, echo = FALSE}
+# specify alpha = 0 for ridge regression.
+model.ridge <- glmnet::cv.glmnet(x, y, alpha = 0, lambda = lambdas,
+                                 nfolds = 10)
+#the log value of lambda that best minimised the error in cross-validation.
+lambda.ridge <- model.ridge$lambda.min
+
+# Lasso Estimation CV-10
+K <- 10
+trc <- trainControl (method="cv", number=K)
+
+model.ridge.10CV <- caret::train(CMEDV ~ ., 
+                                    data = train, 
+                                    trControl=trc, 
+                                    method='glmnet', 
+                                    tuneGrid=expand.grid(alpha=0,
+                                                         lambda=lambda.ridge))
+
+normalization.train <- (length(train$CMEDV)-1)*var(train$CMEDV)
+NMSE.ridge.train.error <- crossprod(predict (model.ridge.10CV) - train$CMEDV) / normalization.train
+
+model.ridge.FINAL <- glmnet::glmnet(x, y, alpha = 0, lambda = lambda.ridge)
+
+## This is the test NMSE for lasso:
+normalization.test <- (length(test$CMEDV)-1)*var(test$CMEDV)
+sse_raw <- test$CMEDV - model.ridge.FINAL$a0- data.matrix(test[,-dim(train)[2]]) %*% model.ridge.FINAL$beta 
+sse <- crossprod (as.matrix(sse_raw)) 
+
+NMSE.ridge.test.error <- sse/normalization.test
+```
+
+```{r,  echo = FALSE, message=FALSE, warning=FALSE,results='asis'}
+error.models <- tibble(regression_method = "Glmnet Ridge",
+                       lambda=lambda.ridge,
+                       train_MSE = as.numeric(NMSE.lasso.train.error),
+                       test_MSE = as.numeric(NMSE.lasso.test.error)) %>% 
+  add_row(regression_method="Custom Ridge",
+          lambda=out.ridge$performance$lambda,
+          train_MSE = out.ridge$performance$train_mspe,
+          test_MSE = out.ridge$performance$mspe)
+
+error.models%>%
+  kable(format = "latex", booktabs = TRUE , digits = 6,
+        caption = "Model Errors Summary") %>% 
+  kable_styling(position = "center",latex_options = c("HOLD_position"),
+                font_size = 9)
+```
+
+We can clearly see the measures are almost the same for both *Glmnet* and *custom* models, and also very similar to the lasso measures.
+
+On the other hand, we see the lambda values for *Glmnet* ridge and lasso are the same while for our custom functions the value is quite different. This could be due to noise or numerical errors in our custom function. To illustrate this, we can plot the $MSPE$ versus $log(1+\lambda)$:
+
+```{r, echo = FALSE, message=FALSE, warning=FALSE,fig.align="center",out.width = "300pt"}
+set.seed(42)
+out.cv <- ridge_lambda_search_cv(x, y, cv = 10, lambdas, plot = T)
+```
+
+As the curve is almost constant in the lower range of the plot, any small errors could easily affect the minimum without impacting the performance of the model.
