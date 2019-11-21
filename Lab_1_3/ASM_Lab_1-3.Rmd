@@ -24,11 +24,6 @@ knitr::opts_chunk$set(echo = TRUE)
 ```
 
 ```{r, echo = FALSE, message=FALSE, warning=FALSE,results="hide"}
-
-############################################################
-###############  libraries  & Functions      ############### 
-############################################################
-
 ### load packages ###
 requireorinstall=function(package=""){
   reqpac=parse(text=paste("require(",as.character(package),")"))
@@ -44,13 +39,10 @@ requireorinstall=function(package=""){
     }
   }
 }
-
-
 requireorinstall(c("knitr","kableExtra","ggplot2","ggsci","dplyr","tidyr",
                    "lmtest","tidyverse","broom","purrr","magrittr","grid",
                    "gridExtra","scales","GGally","fBasics", "car", "effects",
-                   "emmeans", "viridis"))
-
+                   "emmeans", "viridis","tibble"))
 ## theme definition for ggplot 
 ggstyleFonts = theme(axis.title.x = element_text(size = 10,
                                                  vjust=0.1),
@@ -64,31 +56,135 @@ ggstyleFonts = theme(axis.title.x = element_text(size = 10,
                      plot.title = element_text(size=11),
                      legend.text = element_text( size=8),
                      legend.title = element_text( size=9))
-
 ```
+
+The aim of this work is to explore the Generalized Linear Model for count data
+by working with the UFO data set, which compiles the UFO sightings in the USA
+from 2000 to 2014 depending on state, period, month, weekday of sightings.
 
 # Exploratory Data Analysis
 
 
-```{r,warning=FALSE,echo = FALSE,message= FALSE}
-ufo <- read.csv("UFO.csv", sep=";")
+
+```{r, warning=FALSE,echo = FALSE,message= FALSE}
+ufo <- read.csv("UFO.csv", sep=";") %>% 
+  mutate(Period=factor(Period, labels = c("Y00-04","Y05-09","Y10-14")),
+         Month=factor(Month,
+                      labels = c("Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec")),
+         Weekday=factor(Weekday,
+                        labels = c("Mo","Tu","Wd","Th","Fr","Sa","Su")))
 
 ```
 
 
 # Log-linear model 
 
+We start building our generalized linear model as a *log-linear* model depending
+on all the predictors with no interactions.
 
-# Evaluation First Order Interactions
+```{r}
+m1 <- glm(Sights ~ ., family = poisson,  data = ufo)
+glance(m1)
+```
+
+We check for the significance of the coefficients corresponding to categorical variables by looking at the Anova test:
+
+```{r}
+anova(m1, test = "Chisq")
+```
+
+It is clear that all predictors are significant.
+
+# First Order Interactions
+
+In order to better capture the relations between predictors and response variable, we evaluate the model with possible first order interactions. As before, we look the significance of the categorical variables together with the interaction terms.
+
+As fiting a model with all interactions (without quadratic terms) takes unviable amount of time, we fit a model with the interaction for each variable at a time, and check if it's significantly different to the first full model (without interactions) and its significant factors and interactions.
+
+```{r}
+# Do not Run, takes a lot of time
+# m2 <- glm(Sights ~ .*State - State*State,
+#           family = poisson,  data = ufo)
+# glance(m1)
+# glance(m2)
+# anova(m1,m2, test = "Chisq")
+# anova(m2, test = "Chisq")
+```
+
+State interactions seems to be significant, and its associated model is significantly different from the complete model.
+
+```{r}
+# Do not Run, takes a lot of time
+# m2 <- glm(Sights ~ .*Period - Period*Period,
+#           family = poisson,  data = ufo)
+# glance(m1)
+# glance(m2)
+# anova(m1,m2, test = "Chisq")
+# anova(m2, test = "Chisq")
+```
+
+Period interactions seems to be significant, and its associated model is significantly different from the complete model.
+
+```{r}
+# Do not Run, takes a lot of time
+# m2 <- glm(Sights ~ .*Month - Month*Month,
+#           family = poisson,  data = ufo)
+# glance(m1)
+# glance(m2)
+# anova(m1,m2, test = "Chisq")
+# anova(m2, test = "Chisq")
+```
+
+Month interactions seems to be significant, and its associated model is significantly different from the complete model.
+
+```{r}
+# Do not Run, takes a lot of time
+# m2 <- glm(Sights ~ .*Weekday - Weekday*Weekday,
+#           family = poisson,  data = ufo)
+# glance(m1)
+# glance(m2)
+# anova(m1,m2, test = "Chisq")
+# anova(m2, test = "Chisq")
+```
+
+Weekday interactions seems to be significant, and its associated model is significantly different from the complete model.
+
+```{r}
+# Do not Run, takes a lot of time
+# m2 <- glm(Sights ~ .*Hour - Hour*Hour,
+#           family = poisson,  data = ufo)
+# glance(m1)
+# glance(m2)
+# anova(m1,m2, test = "Chisq")
+# anova(m2, test = "Chisq")
+```
+
+Hour interactions seems to be significant, and its associated model is significantly different from the complete model.
+
+Since all interactions seem to be significant, we build the complete model with all the first-order interactions.
+
+```{r}
+# Do not Run, takes a lot of time
+m2 <- glm(Sights ~ .*. - State*State - Period*Period - Month*Month - Weekday*Weekday - Hour*Hour, family = poisson,  data = ufo)
+
+glance(m1)
+glance(m2)
+anova(m1,m2, test = "Chisq")
+anova(m2, test = "Chisq")
+```
 
 
 # Automatic Variable Selection process
 
 
+
 # Model validation
+
 
 
 # Overdispersion diagnosis
 
 
+
 # Model interpretation
+
