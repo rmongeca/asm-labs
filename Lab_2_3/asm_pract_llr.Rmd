@@ -20,7 +20,7 @@ header-includes: |
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = FALSE)
 set.seed(42)
 ```
 
@@ -76,7 +76,7 @@ The first thing we need to do is to compute the local linear regression for the 
 variable *lgWeight* depending on *Yr*. We choose the bandwidth as the one that
 minimizes the LOOCV estimate:
 
-```{r, fig.align='center', out.width="300pt"}
+```{r, fig.align='center', out.width="250pt"}
 # Choice between "normal"  (Gaussian, default), 
 # "epan"    (Epanechnikov) or 
 # "rs.epan" (re-scaled Epanechnikov)
@@ -97,7 +97,7 @@ text(x=h.min,y=h.result[which.min(h.result$cv),"cv"], labels
 After choosing the bandwidth, we build the local linear regression model using
 the *locpolreg* function and compute the residual values.
 
-```{r, fig.align='center', out.width="300pt"}
+```{r, fig.align='center', out.width="250pt"}
 m.result <- locpolreg(x=Yr,y=lgWeight,h=h.min,q=1,type.kernel=kernel.type)
 eps <- lgWeight - m.result$mtgr
 eps2 <- eps*eps
@@ -108,7 +108,8 @@ Having obtained the residual values $\hat{\epsilon}_i = y_i - \hat{m}(x_i)$ we c
 their logarithm $z_i = \log{\hat{\epsilon}^2_i }$. We need to build a new model 
 for $z_i$ against $x_i$. We choose the new bandwidth and build the model:
 
-```{r, fig.align='center', out.width="300pt"}
+```{r, fig.align='center', out.height="200pt", fig.width=12}
+op<-par(mfrow=c(1,2))
 h.v <- exp(seq(log(diff(range(Yr))/100), log(diff(range(Yr))/4),l=20))
 # Get LOOCV and GCV estimates
 h.result <- h.cv.gcv(x=Yr, y=Z, h.v=h.v, q=1, type.kernel=kernel.type) %>% 
@@ -118,10 +119,8 @@ h.min <- h.result[which.min(h.result$cv),"h.v"]
 abline(v=h.min, col=2)
 text(x=h.min,y=h.result[which.min(h.result$cv),"cv"], labels
      =round(h.min,digits=2), pos = 3, col = 2)
-```
-
-```{r, fig.align='center', out.width="300pt"}
 q.result <- locpolreg(x=Yr,y=Z,h=h.min,q=1,type.kernel=kernel.type)
+par(op)
 ```
 
 Finally, the conditional variance $\hat{\sigma}^2(x) =\exp{\hat{q}(x)}$ where 
@@ -136,13 +135,15 @@ To sum up the results, we plot the value of $\epsilon_i^2$ against $x_i$
 superimposing the values of $\hat{\sigma}^2(x)$, and also the values of 
 $\hat{m}(x)$ with the bands $\hat{m}(x) \pm 1.96\hat{\sigma}(x)$.
 
-```{r, fig.align='center', out.width="300pt"}
+```{r, fig.align='center', out.height="200pt", fig.width=12}
+op<-par(mfrow=c(1,2))
 plot(Yr, eps2, cex=0.8)
 points(Yr, sigma2, type="l", col="red", lwd=2)
 
 plot(Yr,m.result$mtgr)
 points(Yr,m.result$mtgr+1.96*sigma, type="l", col="blue", lty=2)
 points(Yr,m.result$mtgr-1.96*sigma, type="l", col="blue", lty=2)
+par(op)
 ```
 
 ## Estimation using *sm.regression* function
@@ -153,14 +154,14 @@ We use the function *dpill* in the *KernSmooth* package in order to compute the
 regression models, both $\hat{m}(x)$ and $\hat{q}(x)$.
 Regarding the Kernel choice, we decide to use the *normal* kernel.
 
-```{r, fig.align='center', out.width="300pt"}
+```{r, fig.align='center', out.width="250pt"}
 h.min <- dpill(x=Yr, y=lgWeight)
 ```
 
 After choosing the bandwidth, we build the local linear regression model using
 the *sm.regression* function and compute the residual values.
 
-```{r, fig.align='center', out.width="300pt"}
+```{r, fig.align='center', out.width="250pt"}
 m.result <- sm.regression(x=Yr,y=lgWeight,h=h.min,
                           eval.grid=FALSE, eval.points=Yr)
 X <- m.result$eval.points # == Yr
@@ -173,7 +174,7 @@ Now we have the residual values $\hat{\epsilon}_i = y_i - \hat{m}(x_i)$ and
 their logarithm $z_i = \log{\hat{\epsilon}^2_i }$. We need to build a new model 
 for $z_i$ against $x_i$. We choose the new bandwidth and build the model:
 
-```{r, fig.align='center', out.width="300pt"}
+```{r, fig.align='center', out.width="250pt"}
 h.min <- dpill(x=X, y=Z)
 q.result <- sm.regression(x=X,y=Z,h=h.min,
                           eval.grid=FALSE, eval.points=X)
@@ -191,7 +192,8 @@ To sum up the results, we plot the value of $\epsilon_i^2$ against $x_i$
 superimposing the values of $\hat{\sigma}^2(x)$, and also the values of 
 $\hat{m}(x)$ with the bands $\hat{m}(x) \pm 1.96\hat{\sigma}(x)$.
 
-```{r, fig.align='center', out.width="300pt"}
+```{r, fig.align='center', out.height="200pt", fig.width=12}
+op<-par(mfrow=c(1,2))
 plot(X, eps2, cex=0.8)
 points(X, sigma2, type="l", col="red", lwd=2)
 
@@ -200,4 +202,5 @@ points(m.result$eval.points, m.result$estimate+1.96*sigma,
        type="l", col="blue", lty=2)
 points(m.result$eval.points, m.result$estimate-1.96*sigma,
        type="l", col="blue", lty=2)
+par(op)
 ```
