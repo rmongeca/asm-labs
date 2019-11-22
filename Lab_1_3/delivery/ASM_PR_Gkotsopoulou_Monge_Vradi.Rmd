@@ -1,0 +1,402 @@
+---
+title: | 
+  | \LARGE ASM Homework 3
+subtitle: "Generalized Linear Model for UFO data"
+author: "Maria Gkotsopoulou & Ricard Monge Calvo & Amalia Vradi"
+date: "21/11/2019"
+geometry: margin=1.5cm
+output: 
+  pdf_document: 
+    latex_engine: xelatex
+fontsize: 11pt
+spacing: single
+subparagraph: yes
+header-includes: |
+  \usepackage{titlesec}
+  \usepackage{subfig}
+  \titlespacing{\section}{0pt}{10pt plus 1pt minus 1pt}{0pt plus 1pt minus 1pt}
+  \titlespacing{\subsection}{0pt}{10pt plus 1pt minus 1pt}{0pt plus 1pt minus 1pt}
+  \titlespacing{\subsubsection}{0pt}{10pt plus 1pt minus 1pt}{0pt plus 1pt minus 1pt}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+```{r, echo = FALSE, message=FALSE, warning=FALSE,results="hide"}
+### load packages ###
+requireorinstall=function(package=""){
+  reqpac=parse(text=paste("require(",as.character(package),")"))
+  if(eval(reqpac)){
+    print(paste(as.character(package), "has been loaded correctly"))
+  } else {
+    print(paste("trying to install" ,as.character(package)))
+    eval(parse(text=paste("try(install.packages(",as.character(package),"))")))
+    if(eval(reqpac)){
+      print(paste(as.character(package) ,"has been installed and loaded correctly"))
+    } else {
+      warning(paste("could not install",as.character(package)))
+    }
+  }
+}
+requireorinstall(c("knitr","kableExtra","ggplot2","ggsci","dplyr","tidyr",
+                   "lmtest","tidyverse","broom","purrr","magrittr","grid",
+                   "gridExtra","scales","GGally","fBasics", "car", "effects",
+                   "emmeans", "viridis","tibble","AER"))
+## theme definition for ggplot 
+ggstyleFonts = theme(axis.title.x = element_text(size = 10,
+                                                 vjust=0.1),
+                     axis.title.y = element_text(size = 10,
+                                                 vjust=1.5),
+                     axis.text.y = element_text(size=9),
+                     axis.text.x = element_text(size=9,
+                                                angle = 45,
+                                                vjust = 1,
+                                                hjust=1),
+                     plot.title = element_text(size=11),
+                     legend.text = element_text( size=8),
+                     legend.title = element_text( size=9))
+```
+
+The aim of this work is to explore the Generalized Linear Model for count data
+by working with the UFO data set, which compiles the UFO sightings in the USA
+from 2000 to 2014 depending on state, period, month, weekday of sightings.
+
+# Exploratory Data Analysis
+
+We see all predictors in the *UFO* dataset are categorical variables. In order to better interpret them, we change their labels to more understandable texts. For the year periods, *Period* variable, we put the letter Y followed by the last two digits of the year (as in Y00-04 for the period 2000-2004). For the *Month* variable we use the english month acronyms (Jan, Feb, etc). Finally for the *Weekday* variable we use the first two letters of the english weekday.
+
+```{r, warning=FALSE,echo = FALSE,message= FALSE}
+ufo <- read.csv("UFO.csv", sep=";") %>% 
+  mutate(Period=factor(Period, labels = c("Y00-04","Y05-09","Y10-14")),
+         Month=factor(Month,
+                      labels = c("Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec")),
+         Weekday=factor(Weekday,
+                        labels = c("Mo","Tu","Wd","Th","Fr","Sa","Su")))
+
+```
+
+Note that the *Hour* is already in a similar format to our year variable, with an H letter followed by the hours of the period (as in H18-23).
+
+To see the relations between these factors and the response variable *Sights* we look at the boxplots.
+
+```{r, echo = FALSE,message = FALSE,fig.align="center",out.width = "300pt"}
+ufo %>% 
+  select(c(Sights,Period)) %>% 
+  ggpairs(.,
+           title = "Sights relation by Period",
+           mapping = ggplot2::aes(colour=Period),
+           lower = list(continuous = wrap("points", size=0.1),
+            discrete = "blank", combo="blank"), 
+          diag = list(discrete="barDiag", 
+                      continuous = wrap("densityDiag", alpha=0.5 )), 
+          upper = list(combo = wrap("box_no_facet", alpha=0.5),
+                       continuous = wrap("cor", size=2, alignPercent=0.8)))+
+  ggstyleFonts+
+  theme(panel.grid.major = element_blank())
+```
+
+We see an increase in sightings as the years go by. As the distribution of sights has high kurtosis and it's asymmetric to the right, it has a long tail that does not fascilitate the comparison across the boxplots. Nevertheless, we do not see a difference in the means nor the variance.
+
+```{r, echo = FALSE,message = FALSE,fig.align="center",out.width = "300pt"}
+ufo %>% 
+  select(c(Sights,Month)) %>% 
+  ggpairs(.,
+          title = "Sights relation by Month",
+           mapping = ggplot2::aes(colour=Month),
+           lower = list(continuous = wrap("points", size=0.1),
+            discrete = "blank", combo="blank"), 
+          diag = list(discrete="barDiag", 
+                      continuous = wrap("densityDiag", alpha=0.5 )), 
+          upper = list(combo = wrap("box_no_facet", alpha=0.5),
+                       continuous = wrap("cor", size=2, alignPercent=0.8)))+
+  ggstyleFonts+
+  theme(panel.grid.major = element_blank())
+```
+
+We don't appreciate a trend for the months.
+
+```{r, echo = FALSE,message = FALSE,fig.align="center",out.width = "300pt"}
+ufo %>% 
+  select(c(Sights,Weekday)) %>% 
+  ggpairs(.,
+          title = "Sights relation by Weekday",
+           mapping = ggplot2::aes(colour=Weekday),
+           lower = list(continuous = wrap("points", size=0.1),
+            discrete = "blank", combo="blank"), 
+          diag = list(discrete="barDiag", 
+                      continuous = wrap("densityDiag", alpha=0.5 )), 
+          upper = list(combo = wrap("box_no_facet", alpha=0.5),
+                       continuous = wrap("cor", size=2, alignPercent=0.8)))+
+  ggstyleFonts+
+  theme(panel.grid.major = element_blank())
+```
+
+There is a slight tendency of higher values as the week goes by. Nevertheless, due to the long tail of the distribution, once again, we can't appreciate a difference in the means.
+
+
+```{r, echo = FALSE,message = FALSE,fig.align="center",out.width = "300pt"}
+ufo %>% 
+  select(c(Sights,Hour)) %>% 
+  ggpairs(.,
+          title = "Sights relation by Hour",
+           mapping = ggplot2::aes(colour=Hour),
+           lower = list(continuous = wrap("points", size=0.1),
+            discrete = "blank", combo="blank"), 
+          diag = list(discrete="barDiag", 
+                      continuous = wrap("densityDiag", alpha=0.5 )), 
+          upper = list(combo = wrap("box_no_facet", alpha=0.5),
+                       continuous = wrap("cor", size=2, alignPercent=0.8)))+
+  ggstyleFonts+
+  theme(panel.grid.major = element_blank())
+```
+
+We see a difference in the mean for the case of the later hours of the day. In addition, it is also the period that has a longer tail.
+
+
+# Log-linear model 
+
+We start building our generalized linear model as a *log-linear* model depending
+on all the predictors with no interactions.
+
+```{r, echo=FALSE}
+m1 <- glm(Sights ~ ., family = poisson,  data = ufo)
+glance(m1) %>%
+  kable(format = "latex", booktabs = TRUE , digits = 3,
+        caption = "Model Summary") %>% 
+  kable_styling(position = "center",latex_options = c("HOLD_position"),
+                font_size = 9)
+cat("Residual Deviance:",m1$deviance,"\n")
+cat("Critical value (5%):",qchisq(0.95,m1$df.res),"\n")
+cat("P-value:",1-pchisq(m1$deviance,m1$df.res),"\n")
+```
+
+We see that residual deviance is much lower than the critical value, assuming a $\chi^{2}$ distribution of `r round(m1$df.res, digits=0)` degrees of freedom, and the p-value is 1. Therefore, we accept the Null hypoteshis that the model fits the data.
+
+Nevertheless, we check for the significance of the coefficients corresponding to categorical variables by looking at the Anova test:
+
+```{r, echo=FALSE}
+anova(m1, test = "Chisq")
+```
+
+It is clear that all predictors are significant, as expected from the previous goodness-of-fit test.
+
+# First Order Interactions
+
+In order to better capture the relations between predictors and response variable, we evaluate the model with possible first order interactions. As before, we look the significance of the categorical variables together with the interaction terms.
+
+As fiting a model with all interactions (without quadratic terms) takes an unviable amount of time, we fit a model with the interaction for each variable at a time, and check whether it's significantly different to the first full model (without interactions) and whether it has significant factors and interactions.
+
+```{r, echo=FALSE}
+# Do not Run, takes a lot of time
+# m2 <- glm(Sights ~ .*State - State*State,
+#           family = poisson,  data = ufo)
+# glance(m1)
+# glance(m2)
+# anova(m1,m2, test = "Chisq")
+# anova(m2, test = "Chisq")
+```
+```{r, echo=FALSE}
+# Do not Run, takes a lot of time
+# m2 <- glm(Sights ~ .*Period - Period*Period,
+#           family = poisson,  data = ufo)
+# glance(m1)
+# glance(m2)
+# anova(m1,m2, test = "Chisq")
+# anova(m2, test = "Chisq")
+```
+```{r, echo=FALSE}
+# Do not Run, takes a lot of time
+# m2 <- glm(Sights ~ .*Month - Month*Month,
+#           family = poisson,  data = ufo)
+# glance(m1)
+# glance(m2)
+# anova(m1,m2, test = "Chisq")
+# anova(m2, test = "Chisq")
+```
+```{r, echo=FALSE}
+# Do not Run, takes a lot of time
+# m2 <- glm(Sights ~ .*Weekday - Weekday*Weekday,
+#           family = poisson,  data = ufo)
+# glance(m1)
+# glance(m2)
+# anova(m1,m2, test = "Chisq")
+# anova(m2, test = "Chisq")
+```
+```{r, echo=FALSE}
+# Do not Run, takes a lot of time
+# m2 <- glm(Sights ~ .*Hour - Hour*Hour,
+#           family = poisson,  data = ufo)
+# glance(m1)
+# glance(m2)
+# anova(m1,m2, test = "Chisq")
+# anova(m2, test = "Chisq")
+```
+
+All independent interactions seem to be significant, and their associated models are significantly different from the full model, so we build the complete model with all the first-order interactions.
+
+```{r, echo=FALSE}
+# Do not Run, takes a lot of time
+m2 <- glm(Sights ~ .*. - State*State - Period*Period - Month*Month - Weekday*Weekday - Hour*Hour, family = poisson,  data = ufo)
+saveRDS(m2, "m2full")
+m1m2anova <- anova(m1,m2, test = "Chisq")
+saveRDS(m1m2anova, file = "m1m2anova")
+m2anova <- anova(m2, test = "Chisq")
+saveRDS(m2anova, file = "m2anova")
+# Significantly different moels with all interactions being significant
+
+# Load already fitted model
+# m2 <- readRDS("m2Full")
+# m1m2anova <- readRDS("m1m2anova")
+# m2anova <- readRDS("m2anova")
+
+glance(m2) %>%
+  kable(format = "latex", booktabs = TRUE , digits = 3,
+        caption = "Model Summary") %>% 
+  kable_styling(position = "center",latex_options = c("HOLD_position"),
+                font_size = 9)
+m1m2anova
+m2anova
+cat("Residual Deviance:",m2$deviance,"\n")
+cat("Critical value (5%):",qchisq(0.95,m2$df.res),"\n")
+cat("P-value:",1-pchisq(m1$deviance,m2$df.res),"\n")
+```
+
+We have again a deviance much lower than the critical value, with a p-value of 1, so the model fits our data as before. Nonetheless, the deviance of the interactions model is lower than the full model. Together with the fact that the anova test between models gives a significant p-value, we can conclude the first order interactions capture better the relations in the data.
+
+# Automatic Variable Selection process
+
+We use the stepwise procedure, by using the $AIC$ & $BIC$ criterion, to select
+our final model. Since our objective is the interpretability of the model we
+choose as starting point the null model, in contrast to starting 
+form the complete. We place as an upper bound the previous complete model with
+first order interaction terms.
+
+```{r}
+# Do not Run, takes a lot of time
+m.null <- glm(Sights ~ 1, family = poisson,  data = ufo)
+# Stepwise model selection with AIC
+m.step.aic <- step(m.null, scope=list(upper=m2), direction="both",
+                k=2, trace = 0)
+saveRDS(m.step.aic, file="mStepAic")
+# m.step.aic <- readRDS("mStepAic")
+cat("AIC model formula")
+m.step.aic$formula
+# Stepwise model selection with BIC
+m.step.bic <- step(m.null, scope=list(upper=m2), direction="both",
+                k=log(nrow(ufo)), trace = 0)
+saveRDS(m.step.bic, file="mStepBic")
+# m.step.bic <- readRDS("mStepBic")
+cat("BIC model formula")
+m.step.bic$formula
+```
+
+```{r, echo = FALSE, message=FALSE, warning=FALSE,results='asis'}
+# Model comarison
+tibble(model = "Complete_interactions",
+         AIC =  m2$aic,
+       BIC = BIC(m2) ) %>%
+  add_row(model = "stepwise_AIC",
+       AIC =  m.step.aic$aic,
+       BIC = BIC(m.step.aic) ) %>%
+  add_row(model = "stepwise_BIC",
+       AIC = m.step.bic$aic,
+       BIC = BIC(m.step.bic)) %>%
+  kable(format = "latex", booktabs = TRUE , digits = 3,
+        caption = "Models Summary") %>% 
+  kable_styling(position = "center",latex_options = c("HOLD_position"),
+                font_size = 9)
+
+```
+
+Since the models are nested we use the *Anova* test to see if they are significantly different.
+
+```{r}
+# Anova test comaprison between models
+anova(m.step.aic, m.step.bic, test = "Chisq")
+```
+
+The models are significantly different. This is due to the difference in criteria, penalizing more additional parameters with *BIC*. As expected, the *AIC* selected model has a better *AIC* measure while the *BIC* selected model has better *BIC* measure. In order to better interpret it, we choose the *BIC* which is the more succint model based on the parsimony criteria.
+
+```{r, echo=FALSE}
+m.final <- m.step.bic
+cat("Residual Deviance:",m.final$deviance,"\n")
+cat("Critical value (5%):",qchisq(0.95,m.final$df.res),"\n")
+cat("P-value:",1-pchisq(m1$deviance,m.final$df.res),"\n")
+```
+
+Again our model seems to fit the data.
+
+# Model validation
+
+After selecting our final model, we check the assumptions by looking at the
+following plots:
+
+```{r, warning=FALSE, echo=FALSE,fig.align="center",out.width = "350pt"}
+op<-par(mfrow=c(2,2))
+plot(m.final)
+par(op)
+```
+
+From the *Normal Q-Q* plot we see that there is assymetry in the
+distribution and we can conclude that normality of the residuals is not met.
+
+Furthermore, from the *Scale-Location* plot, we seek to validate the
+assumption of homoskedasticity, which does not seem to hold in our case. Furthermore, we see that there are some patterns in the plot which could indicate quadratic relations between the predictors and the response. For the purposes of our assignment, we will not explore this any further.
+
+Finally, from the *Residuals-Fitted* plot we see that the residuals don't seem to have any kind of tendency. However, they are not randomly distributed across the y axis. This could again indicate the need for other corrections in the predictors or response variables. For the purposes of our assignment, we will not explore this any further.
+
+On the other hand, we can see the marginal residual plots to compare the mean values of the data and our model:
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE,fig.align="center",out.width = "350pt"}
+marginalModelPlots(m.final)
+```
+
+We see the data and model's mean values coincide quite well.
+
+
+# Overdispersion diagnosis
+
+To complete the discussion about the goodness of our model, we perform a dispersion test.
+
+```{r}
+dispersiontest(m.final)
+```
+
+Although the overdispersion value is smaller than 1, according to the p-value we can not reject the null hypothesis of equidispersion. This confirms the goodness of our model.
+
+# Model interpretation
+
+For the model interpretation, we will use the *effect* plots, taking into
+account the interaction terms.
+As we are building a Poisson regression model, we can not directly interpret
+the coefficients and response values, since they do not represent the response
+variable class but the value of the link function.
+
+```{r, warning=FALSE, message=FALSE, fig.align="center", out.width = "250pt"}
+m.effects <- effects::allEffects(m.final)
+```
+
+```{r fig.align="center", message=FALSE, warning=FALSE, out.width="350pt"}
+plot(m.effects, "State:Hour")
+```
+
+From this effects plots, we can see that the sighting rate per state does not seem to change significantly during the first three hour periods of the day. However, for the last period, from 18 to 23, we have more variance in the rate of sightings per state. This could be due to more people spending more time outdoors.
+
+```{r, warning=FALSE, message=FALSE, fig.align="center", out.width = "350pt"}
+plot(m.effects, "Hour:Period")
+```
+
+In this case, we see the mean hour period sighting rate for year period is higher for years 2005-2009. In addition, for year period 2010-2014 we have much higher sighting rate for the hour period from 18 to 23. One reason for this increase could be the bigger availability of *UFO* reporting devices like mobile phones in this year periods.
+
+```{r, warning=FALSE, message=FALSE, fig.align="center", out.width = "350pt"}
+plot(m.effects, "Period:Weekday")
+```
+
+Again we see that in years 2005-2009 we have a higher mean of sighting rates per weekday. Furthermore, we see an increase towards the end of the week, when probably more people do not work.
+
+```{r fig.align="center", message=FALSE, warning=FALSE, out.width="350pt"}
+plot(m.effects, "Period:Month")
+```
+
+Like in the previous plots, the mean for 2005-2009 is slightly higher, but we do not appreciate any other pattern.
