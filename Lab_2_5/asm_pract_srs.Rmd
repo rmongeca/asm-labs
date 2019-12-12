@@ -1,0 +1,95 @@
+---
+title: | 
+  | \LARGE ASM Practice 
+subtitle: "Smoothing and regression splines"
+author: "Maria Gkotsopoulou & Ricard Monge Calvo & Amalia Vradi"
+date: "14/12/2019"
+geometry: margin=1.5cm
+output: 
+  pdf_document: 
+    latex_engine: xelatex
+fontsize: 11pt
+spacing: single
+subparagraph: yes
+header-includes: |
+  \usepackage{titlesec}
+  \usepackage{subfig}
+  \titlespacing{\section}{0pt}{10pt plus 1pt minus 1pt}{0pt plus 1pt minus 1pt}
+  \titlespacing{\subsection}{0pt}{10pt plus 1pt minus 1pt}{0pt plus 1pt minus 1pt}
+  \titlespacing{\subsubsection}{0pt}{10pt plus 1pt minus 1pt}{0pt plus 1pt minus 1pt}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+set.seed(42)
+```
+
+```{r, echo = FALSE, message=FALSE, warning=FALSE, results="hide"}
+requireorinstall=function(package=""){
+  reqpac=parse(text=paste("require(",as.character(package),")"))
+  if(eval(reqpac)){
+    print(paste(as.character(package), "has been loaded correctly"))
+  } else {
+    print(paste("trying to install" ,as.character(package)))
+    eval(parse(text=paste("try(install.packages(",as.character(package),"))")))
+    if(eval(reqpac)){
+      print(paste(as.character(package) ,"has been installed and loaded correctly"))
+    } else {
+      warning(paste("could not install",as.character(package)))
+    }
+  }
+}
+requireorinstall(c("splines","tidyverse","dplyr","kable","kableExtra"))
+```
+
+Estimate the regression function m(instant) of cnt as a function of instant
+using a cubic regression splines estimated with the R function smooth.splines
+and choosing the smoothing parameter by Generalized Cross Validation.
+
+```{r, echo=FALSE, warning=FALSE}
+bikes <-  get(load("bikes.Washington.Rdata"))
+#  "generalized" cross-validation (GCV) when cv =FALSE;
+sm.sp.1 <- smooth.spline(x = bikes$instant, y = bikes$cnt,
+                         cv = FALSE, all.knots = FALSE)
+```
+
+a) The chosen Smoothness penalization hyperparameter $\lambda$ by GCV is 
+`r sm.sp.1$lambda`.
+
+b) The corresponding equivalent number of degrees of freedom of the spline
+regression's linear estimatoris `r sm.sp.1$df`.
+
+c) `r length(sm.sp.1$fit$knot)` knots were used.
+
+d) We show a scatterplot of the data points with the fitted spline regression:
+
+```{r, out.width='350pt', fig.align='center'}
+plot(bikes$instant,bikes$cnt, col="black")
+lines(sm.sp.1, lty = 1, lw=2, col = "blue")
+```
+
+e) Estimate now m(instant) by unpenalized regression splines combining
+the R functions bs and lm, using the knots
+where n.knots is the previous value of df minus 4.
+
+f) Plot the scatter plot with the different spline regressions
+
+```{r, out.width='350pt', fig.align='center'}
+x <- bikes$instant # x
+y <- bikes$cnt # y
+n <- length(x)
+n.knots <- sm.sp.1$df -4
+my.knots <- quantile(x,((1:n.knots)-.5)/n.knots) 
+b.kn <- range(x)+c(-1,1)*.1*(diff(range(x)))
+X.bs <- bs(x, knots=my.knots, Boundary.knots = b.kn)
+sreg <- lm(y~X.bs)
+{
+  plot(bikes$instant,bikes$cnt, col="black")
+  lines(sm.sp.1, lty = 1, lw=2, col = "blue")
+  lines(bikes$instant, sreg$fitted.values, lty = 1, lw=2, col = "red")
+  legend("topleft", col=c("blue","red"), lw=2,
+         legend = c("Smooth Spline Regression","Unpenalized Spline Regression"))
+}
+```
+
+
