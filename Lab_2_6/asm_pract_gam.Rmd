@@ -1,0 +1,275 @@
+---
+title: | 
+  | \LARGE ASM Practice 
+subtitle: "GAMs for hirsutism data"
+author: "Maria Gkotsopoulou & Ricard Monge Calvo & Amalia Vradi"
+date: "06/01/2020"
+geometry: margin=1.5cm
+output: 
+  pdf_document: 
+    latex_engine: xelatex
+fontsize: 11pt
+spacing: single
+subparagraph: yes
+header-includes: |
+  \usepackage{titlesec}
+  \usepackage{subfig}
+  \titlespacing{\section}{0pt}{10pt plus 1pt minus 1pt}{0pt plus 1pt minus 1pt}
+  \titlespacing{\subsection}{0pt}{10pt plus 1pt minus 1pt}{0pt plus 1pt minus 1pt}
+  \titlespacing{\subsubsection}{0pt}{10pt plus 1pt minus 1pt}{0pt plus 1pt minus 1pt}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning=FALSE, message=FALSE)
+set.seed(42)
+```
+
+```{r, results="hide"}
+library(sm)
+library(rgl)
+library(mgcv)
+library(dplyr)
+
+hirs <- read.table("hirsutism.dat",header=T, sep="\t",fill=TRUE)
+hirs$Treatment <- as.factor(hirs$Treatment)
+attach(hirs)
+```
+
+A clinical trial was conducted to evaluate the effectiveness of an antiandrogen 
+combined with an oral contraceptive in reducing hirsutism for 12 consecutive months.
+The data set `hirsutism.dat` contains artificial values of measures corresponding to 
+some patients in this study. The variables are the following:
+
+* `Treatment`, with values 0, 1, 2 or 3.
+* `FGm0`, it indicates the baseline hirsutism level at the randomization moment 
+(the beginning of the clinical trial). Only women with baseline FG values grater 
+than 15 where recruited.
+* `FGm3`, FG value at 3 months.
+* `FGm6`, FG value at 6 months.
+* `FGm12`, FG value at 12 months, the end of the trial. 
+* `SysPres`, baseline systolic blood pressure.
+* `DiaPres`, baseline diastolic blood pressure.
+* `weight`, baseline weight.
+* `height`, baseline height.
+
+```{r, out.width='250pt', fig.align='center'}
+boxplot(hirs[,2:5])
+```
+
+
+```{r, out.width='250pt', fig.align='center'}
+par(mfrow=c(2,2))
+boxplot(hirs[,2]~Treatment,ylim=c(0,30), main=names(hirs)[2], xlab="Treatment")
+boxplot(hirs[,3]~Treatment,ylim=c(0,30), main=names(hirs)[3], xlab="Treatment")
+boxplot(hirs[,4]~Treatment,ylim=c(0,30), main=names(hirs)[4], xlab="Treatment")
+boxplot(hirs[,5]~Treatment,ylim=c(0,30), main=names(hirs)[5], xlab="Treatment")
+par(mfrow=c(1,1))
+```
+
+
+```{r, out.width='250pt', fig.align='center'}
+par(mfrow=c(2,2))
+boxplot(hirs[Treatment==0,2:5],ylim=c(0,30), main="Treatment 0")
+boxplot(hirs[Treatment==1,2:5],ylim=c(0,30), main="Treatment 1")
+boxplot(hirs[Treatment==2,2:5],ylim=c(0,30), main="Treatment 2")
+boxplot(hirs[Treatment==3,2:5],ylim=c(0,30), main="Treatment 3")
+par(mfrow=c(1,1))
+```
+
+
+Our objective is to fit several *GAM* models (including semiparametric models) 
+explaining `FGm12` as a function of the variables that were measured at the 
+beginning of the clinical trial (including `FGm0`) and `Treatment` (treated as factor). 
+
+
+# Additive Models
+
+We use function `gam` from package `mgcv` to fit the following additive models:
+
+* `FGm12 ~ FGm0 + Treatment`
+* `FGm12 ~ s(FGm0) + Treatment`
+* `FGm12 ~ s(FGm0, by= Treatment)`
+
+```{r}
+# Linear Model
+am1.0 <- gam(FGm12 ~ FGm0 + Treatment, data=hirs)
+am1.0
+summary(am1.0)
+```
+
+```{r}
+# Additive model 1
+am1.1 <-  gam(FGm12 ~ s(FGm0) + Treatment, data=hirs)
+summary(am1.1)
+plot(am1.1,pages=1,residuals=TRUE)
+```
+
+```{r}
+# Additive model 2
+am1.2 <-  gam(FGm12 ~ s(FGm0, by=Treatment), data=hirs)
+summary(am1.2)
+plot(am1.2,pages=1,residuals=TRUE)
+```
+
+## ANOVA type tests
+
+We use function `anova` to compare the fitted models two by two.
+
+```{r}
+anova(am1.0,am1.1,test="F")
+```
+
+```{r}
+anova(am1.0,am1.2,test="F")
+```
+
+```{r}
+anova(am1.1,am1.2,test="F")
+```
+
+## Explaining `FGm12` by SysPres and DiaPres
+
+* `FGm12 ~ s(FGm0) + Treatment + SysPres + DiaPres`
+* `FGm12 ~ s(FGm0) + Treatment + s(SysPres) + DiaPres`
+* `FGm12 ~ s(FGm0) + Treatment + SysPres + s(DiaPres)`
+* `FGm12 ~ s(FGm0) + Treatment + s(SysPres) + s(DiaPres)`
+* `FGm12 ~ s(FGm0) + Treatment + s(SysPres, DiaPres)`
+
+
+```{r}
+# Additive model 3
+am1.3 <-  gam(FGm12 ~ s(FGm0) + Treatment + SysPres + DiaPres, data=hirs)
+summary(am1.3)
+plot(am1.3,pages=1,residuals=TRUE)
+```
+
+```{r}
+# Additive model 4
+am1.4 <-  gam(FGm12 ~ s(FGm0) + Treatment + s(SysPres) + DiaPres, data=hirs)
+summary(am1.4)
+plot(am1.4,pages=1,residuals=TRUE)
+```
+
+```{r}
+# Additive model 3
+am1.5 <-  gam(FGm12 ~ s(FGm0) + Treatment + SysPres + s(DiaPres), data=hirs)
+summary(am1.5)
+plot(am1.5,pages=1,residuals=TRUE)
+```
+
+```{r}
+# Additive model 6
+am1.6 <-  gam(FGm12 ~ s(FGm0) + Treatment + s(SysPres) + s(DiaPres), data=hirs)
+summary(am1.6)
+plot(am1.6,pages=1,residuals=TRUE)
+```
+
+
+```{r}
+# Additive model 3
+am1.7 <-  gam(FGm12 ~ s(FGm0) + Treatment + s(SysPres, DiaPres), data=hirs)
+summary(am1.7)
+plot(am1.7,pages=1,residuals=TRUE)
+```
+
+### ANOVA type tests
+
+We use function `anova` to compare the fitted models two by two.
+
+```{r}
+anova(am1.3,am1.4,test="F")
+```
+
+```{r}
+anova(am1.3,am1.5,test="F")
+```
+
+```{r}
+anova(am1.3,am1.6,test="F")
+```
+
+```{r}
+anova(am1.3,am1.7,test="F")
+```
+
+```{r}
+anova(am1.4,am1.5,test="F")
+```
+
+```{r}
+anova(am1.6,am1.7,test="F")
+```
+
+
+## Explaining `FGm12` by `weight` and `height`
+
+* `FGm12 ~ s(FGm0) + Treatment + weight + height`
+* `FGm12 ~ s(FGm0) + Treatment + s(weight) + height`
+* `FGm12 ~ s(FGm0) + Treatment + weight + s(height)`
+* `FGm12 ~ s(FGm0) + Treatment + s(weight) + s(height)`
+* `FGm12 ~ s(FGm0) + Treatment + s(weight, height)`
+
+```{r}
+# Additive model 3
+am2.3 <-  gam(FGm12 ~ s(FGm0) + Treatment + weight + height, data=hirs)
+summary(am2.3)
+plot(am2.3,pages=1,residuals=TRUE)
+```
+
+```{r}
+# Additive model 4
+am2.4 <-  gam(FGm12 ~ s(FGm0) + Treatment + s(weight) + height, data=hirs)
+summary(am2.4)
+plot(am2.4,pages=1,residuals=TRUE)
+```
+
+```{r}
+# Additive model 5
+am2.5 <-  gam(FGm12 ~ s(FGm0) + Treatment + weight + s(height), data=hirs)
+summary(am2.5)
+plot(am2.5,pages=1,residuals=TRUE)
+```
+
+
+```{r}
+# Additive model 6
+am2.6 <-  gam(FGm12 ~ s(FGm0) + Treatment + s(weight) + s(height), data=hirs)
+summary(am2.6)
+plot(am2.6,pages=1,residuals=TRUE)
+```
+
+
+```{r}
+# Additive model 7
+am2.7 <-  gam(FGm12 ~ s(FGm0) + Treatment + s(weight, height), data=hirs)
+summary(am2.7)
+plot(am2.7,pages=1,residuals=TRUE)
+```
+
+### ANOVA type tests
+
+We use function `anova` to compare the fitted models two by two.
+
+```{r}
+anova(am2.3,am2.4,test="F")
+```
+
+```{r}
+anova(am2.3,am2.5,test="F")
+```
+
+```{r}
+anova(am2.3,am2.6,test="F")
+```
+
+```{r}
+anova(am2.3,am2.7,test="F")
+```
+
+```{r}
+anova(am2.4,am2.5,test="F")
+```
+
+```{r}
+anova(am2.6,am2.7,test="F")
+```
