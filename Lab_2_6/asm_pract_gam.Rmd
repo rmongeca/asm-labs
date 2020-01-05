@@ -31,6 +31,7 @@ library(mgcv)
 library(dplyr)
 
 hirs <- read.table("hirsutism.dat",header=T, sep="\t",fill=TRUE)
+hirs <- hirs %>% tidyr::drop_na()
 hirs$Treatment <- as.factor(hirs$Treatment)
 attach(hirs)
 ```
@@ -52,34 +53,125 @@ than 15 where recruited.
 * `weight`, baseline weight.
 * `height`, baseline height.
 
-```{r, out.width='250pt', fig.align='center'}
-boxplot(hirs[,2:5])
-```
-
-
-```{r, out.width='250pt', fig.align='center'}
-par(mfrow=c(2,2))
-boxplot(hirs[,2]~Treatment,ylim=c(0,30), main=names(hirs)[2], xlab="Treatment")
-boxplot(hirs[,3]~Treatment,ylim=c(0,30), main=names(hirs)[3], xlab="Treatment")
-boxplot(hirs[,4]~Treatment,ylim=c(0,30), main=names(hirs)[4], xlab="Treatment")
-boxplot(hirs[,5]~Treatment,ylim=c(0,30), main=names(hirs)[5], xlab="Treatment")
-par(mfrow=c(1,1))
-```
-
-
-```{r, out.width='250pt', fig.align='center'}
-par(mfrow=c(2,2))
-boxplot(hirs[Treatment==0,2:5],ylim=c(0,30), main="Treatment 0")
-boxplot(hirs[Treatment==1,2:5],ylim=c(0,30), main="Treatment 1")
-boxplot(hirs[Treatment==2,2:5],ylim=c(0,30), main="Treatment 2")
-boxplot(hirs[Treatment==3,2:5],ylim=c(0,30), main="Treatment 3")
-par(mfrow=c(1,1))
-```
-
-
 Our objective is to fit several *GAM* models (including semiparametric models) 
 explaining `FGm12` as a function of the variables that were measured at the 
-beginning of the clinical trial (including `FGm0`) and `Treatment` (treated as factor). 
+beginning of the clinical trial (including `FGm0`) and `Treatment` (treated as
+factor).
+
+Before proceeding to the model fitting, we remove the rows which have missing
+values, which are 8 rows.
+
+During the following discussion, we use the function `gam` from package `mgcv` to fit our additive models.
+
+# Baseline linear model
+
+After fitting a complete linear model and removing the non-significant terms, we get a model with the followig formula:
+
+* `FGm12 ~ FGm0 + Treatment`
+
+```{r}
+# Linear Model
+am.lin <- gam(FGm12 ~ FGm0 + Treatment,
+             data=hirs)
+summary(am.lin)
+```
+
+Which we use as a baseline model to compare all following additive models.
+
+# Linear vs smooth terms
+
+We want to explore whether our predictors should enter the model as linear
+parametric or smooth terms.
+To see this, we fit a model with all numerical predictors as smooth terms, 
+having the following formula:
+
+* `FGm12 ~ Treatment + s(FGm0) + s(SysPres) + s(DiaPres) + s(weight) + s(height)`
+
+```{r}
+# Additive model 1
+am.1 <- gam(FGm12 ~ Treatment + s(FGm0) + s(SysPres) + s(DiaPres) 
+                + s(weight) + s(height),
+                data=hirs)
+summary(am.1)
+plot(am.1,pages=1,residuals=TRUE)
+```
+
+From the summary output we see that the effective degrees of freedom (edf) of 
+the *SysPres*, *weight* and *height* predictors are close to 1. In addition, 
+from the plots we see that the form of the effect of these variables is linear.
+Therefore, we include these terms linearly and refit.
+
+```{r}
+# Additive model 2
+am.2 <- gam(FGm12 ~ s(FGm0) + Treatment + SysPres + s(DiaPres) + weight + height,
+                data=hirs)
+summary(am.2)
+plot(am.2,pages=1,residuals=TRUE)
+```
+
+As expected the model does not change when we turn the smooth terms that had edf close to 1 into linear terms.
+
+We know compare this model with the previous linear baseline.
+
+```{r}
+anova(am.lin, am.2, test="F")
+```
+
+Although the models do not seem to differ greatly, the explained deviance of 
+the smooth term model, as well as the adjusted $R^2$ value, is higher.
+Therefore, we prefer the model with smooth terms.
+
+We see a visualization of the predicted values depending on the predictors *Treatment* and *FGm0*:
+
+```{r}
+vis.gam(am.2, view = c("Treatment", "FGm0"), theta=60, phi=20, zlab = "FGm12")
+```
+
+We see for the Treatments 1 to 3 the spline of *FGm12* depending on *FGm12* is
+almost the same, while for treatment 0 (only contraceptives) all values of *FGm12*
+are higher independent on the initial values of *FGm0*.
+
+# Smoothing terms by Treatment
+
+In order to better describe the behaviour of the predictors depending on the *Treatment* value, we can specify the fitting on different smooth terms for each category by using the formula:
+
+* `FGm12 ~ s(FGm0, by= Treatment) + Treatment + SysPres + s(DiaPres) + weight + height`
+
+```{r}
+# Additive model 3
+am.3 <- gam(FGm12 ~ s(FGm0, by= Treatment) + Treatment + SysPres + s(DiaPres) 
+            + weight + height,
+            data=hirs)
+summary(am.3)
+plot(am.3,pages=1,residuals=TRUE)
+```
+
+```{r}
+anova(am.2, am.3, test="F")
+```
+
+```{r}
+vis.gam(am.3, view = c("Treatment", "FGm0"), theta=30, phi=30, zlab = "FGm12")
+```
+
+```{r}
+# Additive model 4
+am.4 <- gam(FGm12 ~ s(FGm0, by= Treatment) + Treatment, data=hirs)
+summary(am.4)
+plot(am.4,pages=1,residuals=TRUE)
+```
+
+```{r}
+anova(am.3, am.4, test="F")
+```
+
+```{r}
+vis.gam(am.4, view = c("Treatment", "FGm0"), theta=30, phi=30, zlab = "FGm12")
+```
+
+
+
+
 
 
 # Additive Models
@@ -89,6 +181,7 @@ We use function `gam` from package `mgcv` to fit the following additive models:
 * `FGm12 ~ FGm0 + Treatment`
 * `FGm12 ~ s(FGm0) + Treatment`
 * `FGm12 ~ s(FGm0, by= Treatment)`
+
 
 ```{r}
 # Linear Model
